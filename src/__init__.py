@@ -92,22 +92,22 @@ _log_config = {
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "level": "INFO",
+            "level": "WARNING",
             "formatter": "console",
-            "stream": "ext://sys.stdout",
+            "stream": "ext://sys.stderr",
         },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
-            "level": "DEBUG",
+            "level": "INFO",
             "formatter": "file",
             "filename": LOG_DIR / "Trailarr.log",
-            "maxBytes": 1_000_000,
+            "maxBytes": 100_000,
             "backupCount": 5,
         },
     },
     "loggers": {
         "root": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
         }
     },
