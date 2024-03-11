@@ -1,8 +1,9 @@
 """CLI Interface for Trailarr"""
 
+import logging
 from argparse import ArgumentParser
 from src import __app_name__, __description__, __version__
-from trailarr import TrailArr
+from trailarr import TrailArr, CFG
 
 app = TrailArr()
 
@@ -21,6 +22,12 @@ def get_arguments():
 
 def main():
     """Run the application"""
+    # Set console logger to the log level in the config
+    for handler in logging.getLogger().handlers:
+        if handler.name == "console":
+            handler.setLevel(CFG.log_level.upper())
+            break
+
     args = get_arguments()
     if args.all:
         app.process_all()
