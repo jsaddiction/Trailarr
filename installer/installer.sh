@@ -3,7 +3,9 @@ echo "************ Install Packages ************"
 apk add -U --update --no-cache \
 	git \
 	python3 \
-	py3-pip
+	py3-pip \
+	yt-dlp \
+	ffmpeg
 
 echo "************ install python packages ************"
 pip install --upgrade --no-cache-dir -U --break-system-packages \
