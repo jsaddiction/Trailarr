@@ -24,6 +24,7 @@ from src import (
     VIDEO_EXTENSIONS,
     Events,
     KodiApi,
+    CFG,
 )
 
 
@@ -38,7 +39,7 @@ class TrailArr:
         self.ffmpeg = FfmpegAPI()
         self.tmdb = TmdbApi()
         self.radarr = RadarrApi()
-        self.kodi = KodiApi("LivingRoom", "192.168.0.10", 8080, "kodi", "kodi")
+        self.kodi = KodiApi(CFG.kodi_name, CFG.kodi_ip, CFG.kodi_port, CFG.kodi_user, CFG.kodi_pass)
 
     @property
     def has_write_permission(self) -> bool:
@@ -211,13 +212,18 @@ class TrailArr:
 
     def _update_kodi(self, movie: Movie, trailer_path: str):
         """Update Kodi with new trailer"""
+        if CFG.is_default:
+            self.log.warning("Kodi is not configured. Skipping Kodi Update.")
+            return
+
         kodi_movie = self.kodi.get_movie_by_file(movie.file_path)
         if not kodi_movie:
             self.log.warning("Kodi does not have %s", movie)
             return
 
         self.kodi.set_trailer_path(kodi_movie.movie_id, trailer_path)
-        # self.kodi.notify("New Trailer Added", movie)
+        if CFG.kodi_notify:
+            self.kodi.notify("New Trailer Added", movie)
 
     def _best_trailer(self, tmdb_id: int) -> Download | None:
         """Get the best trailer for the given movie"""

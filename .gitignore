@@ -13,6 +13,9 @@ __pycache__/
 test_*.py
 /example_data
 
+# Settings file
+settings.ini
+
 # Logs
 /logs
 

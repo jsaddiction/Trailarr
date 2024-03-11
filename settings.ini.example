@@ -1,0 +1,16 @@
+######################################
+#                                    #
+#       Trailarr Config File         #
+#                                    #
+######################################
+
+[LOGS]
+log_level: INFO
+
+[KODI]
+kodi_name: 
+kodi_ip: 127.0.0.1
+kodi_port: 8080
+kodi_user: 
+kodi_pass: 
+kodi_notify: True

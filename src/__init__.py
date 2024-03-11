@@ -4,9 +4,11 @@
 import logging
 import logging.config
 from pathlib import Path
+from .models.config import Config
 from .models.movies import Movie
 from .models.tmdb import FileDetails, TMDBVideo, Download
 from .models.kodi import RPCVersion, Platform, KodiResponse, Player, MOVIE_PROPERTIES, MovieDetails
+from .cfg.cfg import get_config
 from .db.db import DB
 from .yt_dlp.ytdlp import YouTubeDLP, YTDLPError
 from .ffmpeg.exceptions import FfmpegError
@@ -39,6 +41,8 @@ __all__ = [
     "Player",
     "MOVIE_PROPERTIES",
     "MovieDetails",
+    "Config",
+    "get_config",
 ]
 
 __app_name__ = "Trailarr"
@@ -53,8 +57,10 @@ __description__ = "Automatically download and manage movie trailers for Radarr."
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_FILE = ROOT_DIR / "trailarr.db"
+CONFIG_FILE = ROOT_DIR / "settings.ini"
 LOG_DIR = Path("/config/logs") if Path("/config/logs").exists() else ROOT_DIR / "logs"
 TEMP_DIR = ROOT_DIR / "temp"
+CFG = get_config(CONFIG_FILE)
 VIDEO_EXTENSIONS = [
     ".mkv",
     ".iso",
@@ -98,7 +104,7 @@ _log_config = {
         },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
-            "level": "INFO",
+            "level": CFG.log_level.upper(),
             "formatter": "file",
             "filename": LOG_DIR / "Trailarr.txt",
             "maxBytes": 100_000,
