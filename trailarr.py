@@ -122,6 +122,11 @@ class TrailArr:
             file.unlink()
         self.log.debug("Temp Folder Cleaned")
 
+    def _remove_unused_trailers(self, tmdb_id: int) -> None:
+        """Remove unused trailers from the database"""
+        self.log.info("Removing unused trailers for tmdbid %s", tmdb_id)
+        self.db.delete_by_tmdb_id(tmdb_id)
+
     def _get_local_trailer(self, movie: Movie) -> FileDetails | None:
         """Get local file details"""
         self.log.info("Checking for local trailers in %s", movie.directory)
@@ -301,6 +306,9 @@ class TrailArr:
                 case Events.ON_RENAME:
                     movie = self.radarr.get_movie_by_id(self.env.tmdb_id)
                     self.process_movie(movie)
+                case Events.ON_MOVIE_FILE_DELETE:
+                    if self.env.movie_file_delete_reason.lower() != "upgrade":
+                        self._remove_unused_trailers(self.env.tmdb_id)
                 case Events.ON_TEST:
                     self.test()
                 case _:

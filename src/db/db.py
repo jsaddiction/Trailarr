@@ -141,3 +141,9 @@ class DB:
             if row := self.conn.execute(sql, {"hash": hash_str}).fetchone():
                 return self._parse_row(row)
             return None
+
+    def delete_by_tmdb_id(self, tmdb_id: int) -> None:
+        """Delete download by tmdb_id"""
+        sql = "DELETE FROM downloads WHERE tmdb_id = :tmdb_id"
+        with self.conn:
+            self.conn.execute(sql, {"tmdb_id": tmdb_id})

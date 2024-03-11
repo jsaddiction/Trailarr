@@ -42,6 +42,7 @@ class RadarrEnvironment:
     tmdb_id: int = field(default=None, metadata={"var": "radarr_movie_tmdbid"})
     movie_file_dir: str = field(default=None, metadata={"var": "Radarr_Movie_Path"})
     movie_file_path: str = field(default=None, metadata={"var": "Radarr_MovieFile_Path"})
+    movie_file_delete_reason: str = field(default=None, metadata={"var": "Radarr_MovieFile_DeleteReason"})
     raw_vars: dict = field(default=None, repr=False)
 
     @classmethod
