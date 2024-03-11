@@ -100,7 +100,7 @@ _log_config = {
             "class": "logging.handlers.RotatingFileHandler",
             "level": "INFO",
             "formatter": "file",
-            "filename": LOG_DIR / "Trailarr.log",
+            "filename": LOG_DIR / "Trailarr.txt",
             "maxBytes": 100_000,
             "backupCount": 5,
         },
