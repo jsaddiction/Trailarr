@@ -32,8 +32,8 @@ KODI_TRAILER_CACHE_TABLE = """
 CREATE TABLE IF NOT EXISTS kodi_trailer_cache (
     id INTEGER PRIMARY KEY,
     movie_path TEXT NOT NULL UNIQUE,
-    trailer_path TEXT NOT NULL UNIQUE,
-"""
+    trailer_path TEXT NOT NULL UNIQUE
+);"""
 INDICES = [
     "CREATE INDEX IF NOT EXISTS url_idx ON downloads (url);",
     "CREATE INDEX IF NOT EXISTS tmdb_idx ON downloads (tmdb_id);",
