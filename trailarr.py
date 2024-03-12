@@ -227,10 +227,10 @@ class TrailArr:
         # Loop through all cached kodi updates
         for db_movie_path, db_trailer_path in self.db.select_kodi_trailer_cache():
             trailer_file_name = Path(db_trailer_path).name
-            self.log.info("Setting trailer path in Kodi %s", trailer_file_name)
 
             # Get movie from Kodi
             if kodi_movie := self.kodi.get_movie_by_file(db_movie_path):
+                self.log.info("Setting trailer path for %s to %s", kodi_movie, trailer_file_name)
                 if not self.kodi.set_trailer_path(kodi_movie.movie_id, db_trailer_path):
                     self.log.warning("Failed to set trailer path in Kodi for %s", trailer_file_name)
                     continue
