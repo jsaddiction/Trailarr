@@ -183,13 +183,13 @@ class TrailArr:
             trailer_path = self.ytdlp.download(tmdb_data.url)
         except YTDLPError as e:
             self.log.error("Failed to download %s. Error: %s", tmdb_data.url, e)
-            return None
+            return Download(tmdb=tmdb_data, file=FileDetails(broken=True))
 
         try:
             trailer_file = self.ffmpeg.get_video_details(trailer_path)
         except FfmpegError as e:
             self.log.error("Failed to get details for %s. Error: %s", trailer_path, e)
-            return None
+            return Download(tmdb=tmdb_data, file=FileDetails(broken=True))
 
         return Download(tmdb=tmdb_data, file=trailer_file)
 
@@ -202,9 +202,10 @@ class TrailArr:
             if self.db.select_by_url(tmdb_trailer.url):  # add tmdb_id to this
                 continue
 
-            # Download the trailer
-            if dl := self._download_trailer(tmdb_trailer):
-                self.db.insert_download(dl)
+            # Download the trailer, store broken trailers in db
+            dl = self._download_trailer(tmdb_trailer)
+            self.db.insert_download(dl)
+            if not dl.file.broken:
                 downloads.append(dl)
 
         self.log.info("Found %s new trailers for %s", len(downloads), movie)
