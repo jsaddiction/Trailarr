@@ -216,14 +216,32 @@ class TrailArr:
             self.log.warning("Kodi is not configured. Skipping Kodi Update.")
             return
 
-        kodi_movie = self.kodi.get_movie_by_file(movie.file_path)
-        if not kodi_movie:
-            self.log.warning("Kodi does not have %s", movie)
+        # Insert current trailer path into kodi trailer cache
+        self.db.insert_kodi_trailer_cache(str(movie.file_path), trailer_path)
+
+        # Return early if kodi is not available
+        if not self.kodi.is_alive:
+            self.log.warning("Kodi is not available. Skipping Kodi Update.")
             return
 
-        self.kodi.set_trailer_path(kodi_movie.movie_id, trailer_path)
-        if CFG.kodi_notify:
-            self.kodi.notify("New Trailer Added", movie)
+        # Loop through all cached kodi updates
+        for movie_path, trailer_path in self.db.select_kodi_trailer_cache():
+            trailer_file_name = Path(trailer_path).name
+            self.log.info("Setting trailer path in Kodi %s", trailer_file_name)
+
+            # Get movie from Kodi
+            if kodi_movie := self.kodi.get_movie_by_file(movie_path):
+                if not self.kodi.set_trailer_path(kodi_movie.movie_id, trailer_path):
+                    self.log.warning("Failed to set trailer path in Kodi for %s", trailer_file_name)
+                    continue
+            else:
+                self.log.warning("Kodi does not have %s", movie_path)
+                continue
+
+            # Remove cached kodi update if an update was performed or not
+            self.db.delete_kodi_trailer_cache(movie_path)
+            if CFG.kodi_notify:
+                self.kodi.notify("New Trailer Added", trailer_file_name)
 
     def _best_trailer(self, tmdb_id: int) -> Download | None:
         """Get the best trailer for the given movie"""

@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS downloads (
     forced INTEGER,
     UNIQUE(tmdb_id, url) ON CONFLICT REPLACE
 );"""
+KODI_TRAILER_CACHE_TABLE = """
+CREATE TABLE IF NOT EXISTS kodi_trailer_cache (
+    id INTEGER PRIMARY KEY,
+    movie_path TEXT NOT NULL UNIQUE,
+    trailer_path TEXT NOT NULL UNIQUE,
+"""
 INDICES = [
     "CREATE INDEX IF NOT EXISTS url_idx ON downloads (url);",
     "CREATE INDEX IF NOT EXISTS tmdb_idx ON downloads (tmdb_id);",
@@ -46,6 +52,7 @@ class DB:
         # Ensure tables exist with indices
         with self.conn:
             self.conn.execute(DL_HISTORY_TABLE)
+            self.conn.execute(KODI_TRAILER_CACHE_TABLE)
             for index in INDICES:
                 self.conn.execute(index)
 
@@ -107,6 +114,37 @@ class DB:
                 self.conn.execute(sql, data)
         except sqlite3.OperationalError as e:
             self.log.error("Failed to insert %s. Error: %s", download, e)
+
+    def insert_kodi_trailer_cache(self, movie_path: str, trailer_path: str) -> None:
+        """Insert kodi trailer cache into database"""
+        sql = """INSERT OR REPLACE INTO kodi_trailer_cache
+        (movie_path, trailer_path)
+        VALUES
+        (:movie_path, :trailer_path)"""
+        try:
+            with self.conn:
+                self.conn.execute(sql, {"movie_path": movie_path, "trailer_path": trailer_path})
+        except sqlite3.OperationalError as e:
+            self.log.error("Failed to insert kodi trailer cache. Error: %s", e)
+
+    def select_kodi_trailer_cache(self) -> list[tuple[str, str]]:
+        """Select kodi trailer cache from database"""
+        sql = "SELECT * FROM kodi_trailer_cache"
+        try:
+            with self.conn:
+                return [row for row in self.conn.execute(sql)]
+        except sqlite3.OperationalError as e:
+            self.log.error("Failed to select kodi trailer cache. Error: %s", e)
+            return []
+
+    def delete_kodi_trailer_cache(self, movie_path: str) -> None:
+        """Delete kodi trailer cache from database"""
+        sql = "DELETE FROM kodi_trailer_cache WHERE movie_path = :movie_path"
+        try:
+            with self.conn:
+                self.conn.execute(sql, {"movie_path": movie_path})
+        except sqlite3.OperationalError as e:
+            self.log.error("Failed to delete kodi trailer cache. Error: %s", e)
 
     def clear_forced(self, tmdb_id: int) -> None:
         """Clear forced flag for tmdb_id"""
