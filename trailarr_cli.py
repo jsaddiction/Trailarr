@@ -74,4 +74,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         app.log.info("Trailarr has been stopped")
-        app.exit()
+
+    app.exit()
