@@ -303,7 +303,7 @@ class TrailArr:
             new_path = self._move_trailer(temp_trailer.file, movie)
 
         # Update Kodi with new trailer
-        self._update_kodi(movie, new_path)
+        self._update_kodi(movie, str(new_path))
 
     def process_all(self):
         """Process all movies in Radarr"""
