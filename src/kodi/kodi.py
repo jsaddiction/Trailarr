@@ -281,7 +281,7 @@ class KodiApi:
     def set_trailer_path(self, movie_id: int, trailer_path: str) -> bool:
         """Set the trailer path for a movie"""
         params = {"movieid": movie_id, "trailer": str(self._map_path_to_kodi(trailer_path))}
-        self.log.info("Setting trailer path for movie %s to %s", movie_id, params["trailer"])
+        self.log.debug("Setting trailer path for movie %s to %s", movie_id, params["trailer"])
         try:
             resp = self._req("VideoLibrary.SetMovieDetails", params=params)
         except KodiAPIError as e:

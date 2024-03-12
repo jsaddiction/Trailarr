@@ -130,7 +130,7 @@ class TrailArr:
 
     def _get_local_trailer(self, movie: Movie) -> FileDetails | None:
         """Get local file details"""
-        self.log.info("Checking for local trailers in %s", movie.directory)
+        self.log.debug("Checking for local trailers in %s", movie.directory)
         local_trailers: list[Path] = []
         if not movie.file_path.exists():
             self.log.warning("Movie file does not exist: %s", movie.file_path)
@@ -166,7 +166,7 @@ class TrailArr:
         self.log.info("Found Local Trailer: %s", local_trailer.name)
         file_hash = self.ffmpeg.calc_hash(local_trailer)
         if dl := self.db.select_by_hash(file_hash):
-            self.log.info("%s was downloaded previously.", local_trailer.name)
+            self.log.debug("%s was downloaded previously.", local_trailer.name)
             dl.file.path = local_trailer
             return dl.file
 
@@ -195,7 +195,7 @@ class TrailArr:
 
     def _get_new_trailers(self, movie: Movie) -> list[Download]:
         """Download trailers not in db and return list of Downloads"""
-        self.log.info("Getting new trailers for %s", movie)
+        self.log.debug("Getting new trailers for %s", movie)
         downloads: list[Download] = []
         for tmdb_trailer in self.tmdb.get_trailers(movie.tmdb_id):
             # Skip this result if results already in db
@@ -267,7 +267,7 @@ class TrailArr:
             self.log.info("Add some trailers! %s", page_url)
             return
 
-        self.log.info("Best Trailer on TMDB: %s", best_trailer.tmdb.name)
+        self.log.debug("Best Trailer on TMDB: %s", best_trailer.tmdb.name)
 
         # Return early if best trailer is already in place
         if local_file and best_trailer.file.hash == local_file.hash:

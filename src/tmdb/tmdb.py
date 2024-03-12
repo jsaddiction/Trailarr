@@ -106,7 +106,7 @@ class TmdbApi:
 
     def get_trailers(self, movie_id: int) -> list[TMDBVideo]:
         """Get list of trailers given a tmdb movie id"""
-        self.log.info("Getting trailers for movie: %s", movie_id)
+        self.log.debug("Getting trailers for movie: %s", movie_id)
         return [video for video in self._get_videos(movie_id) if video.type == "Trailer"]
 
     def get_page(self, movie_id: int) -> str:
