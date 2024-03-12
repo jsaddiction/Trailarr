@@ -225,21 +225,21 @@ class TrailArr:
             return
 
         # Loop through all cached kodi updates
-        for movie_path, trailer_path in self.db.select_kodi_trailer_cache():
-            trailer_file_name = Path(trailer_path).name
+        for db_movie_path, db_trailer_path in self.db.select_kodi_trailer_cache():
+            trailer_file_name = Path(db_trailer_path).name
             self.log.info("Setting trailer path in Kodi %s", trailer_file_name)
 
             # Get movie from Kodi
-            if kodi_movie := self.kodi.get_movie_by_file(movie_path):
-                if not self.kodi.set_trailer_path(kodi_movie.movie_id, trailer_path):
+            if kodi_movie := self.kodi.get_movie_by_file(db_movie_path):
+                if not self.kodi.set_trailer_path(kodi_movie.movie_id, db_trailer_path):
                     self.log.warning("Failed to set trailer path in Kodi for %s", trailer_file_name)
                     continue
             else:
-                self.log.warning("Kodi does not have %s", movie_path)
+                self.log.warning("Kodi does not have %s", db_movie_path)
                 continue
 
             # Remove cached kodi update if an update was performed or not
-            self.db.delete_kodi_trailer_cache(movie_path)
+            self.db.delete_kodi_trailer_cache(db_movie_path)
             if CFG.kodi_notify:
                 self.kodi.notify("New Trailer Added", trailer_file_name)
 
