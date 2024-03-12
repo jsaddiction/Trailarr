@@ -185,3 +185,9 @@ class DB:
         sql = "DELETE FROM downloads WHERE tmdb_id = :tmdb_id"
         with self.conn:
             self.conn.execute(sql, {"tmdb_id": tmdb_id})
+
+    def get_tmdb_ids(self) -> list[int]:
+        """Get all tmdb_ids"""
+        sql = "SELECT DISTINCT tmdb_id FROM downloads"
+        with self.conn:
+            return [row[0] for row in self.conn.execute(sql)]

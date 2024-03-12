@@ -311,6 +311,12 @@ class TrailArr:
             self.process_movie(movie)
             self._cleanup_temp_folder()
 
+        # Cleanup unused db entries
+        radarr_tmdb_ids = {x.tmdb_id for x in movies}
+        for tmdb_id in self.db.get_tmdb_ids():
+            if tmdb_id not in radarr_tmdb_ids:
+                self._remove_unused_trailers(tmdb_id)
+
     def run(self):
         """Run TrailArr"""
 
