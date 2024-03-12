@@ -65,8 +65,8 @@ class TrailArr:
             self.log.critical("Exited with Error: %s", error)
             sys.exit(1)
 
-        # self.log.info("Completed Successfully")
-        # sys.exit(0)
+        self.log.info("Completed Successfully")
+        sys.exit(0)
 
     def test(self):
         """Run tests for TrailArr"""
