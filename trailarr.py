@@ -226,7 +226,7 @@ class TrailArr:
             return
 
         # Loop through all cached kodi updates
-        for db_movie_path, db_trailer_path in self.db.select_kodi_trailer_cache():
+        for _, db_movie_path, db_trailer_path in self.db.select_kodi_trailer_cache():
             trailer_file_name = Path(db_trailer_path).name
 
             # Get movie from Kodi
