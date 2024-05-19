@@ -60,7 +60,7 @@ def main():
     elif args.tmdb and not args.all:
         movie = app.radarr.get_movie_by_id(args.tmdb)
         if not movie:
-            print(f"TMDB id {args.tmdb} not found in Radarr.")
+            log.warning("TMDB id %s not found in Radarr.", args.tmdb)
             return
         app.process_movie(movie)
 

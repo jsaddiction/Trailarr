@@ -45,7 +45,7 @@ class RadarrApi:
             resp = requests.get(url=f"{self.base_url}{endpoint}", headers=headers, timeout=10, params=params)
             resp.raise_for_status()
         except requests.HTTPError as e:
-            print(e)
+            self.log.error("Error accessing %s. Error: %s", endpoint, e)
             return {}
 
         return resp.json()

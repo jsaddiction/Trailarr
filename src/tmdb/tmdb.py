@@ -44,13 +44,15 @@ class TmdbApi:
             except requests.Timeout:
                 tries_remaining -= 1
                 if tries_remaining > 0:
-                    print(f"Request to {url} timed out after {time_out}s. Retrying {tries_remaining} more times.")
+                    self.log.warning(
+                        "Request to %s timed out after %ss. Retrying %s more times.", url, time_out, tries_remaining
+                    )
                     continue
             except requests.exceptions.RequestException as e:
-                print(f"Failed to get {url}. Error: {e}")
+                self.log.error("Failed to get %s. Error: %s", url, e)
                 return {}
 
-        print(f"Request to {url} timed out after {time_out}s. Retries exhausted.")
+        self.log.error("Request to %s timed out after %ss. Retries exhausted.", url, time_out)
         return {}
 
     def _parse_videos(self, tmdb_id: int, video_data: dict) -> TMDBVideo:
