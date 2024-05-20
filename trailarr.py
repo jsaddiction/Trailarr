@@ -236,7 +236,7 @@ class TrailArr:
                     self.log.warning("Failed to set trailer path in Kodi for %s", trailer_file_name)
                     continue
             else:
-                self.log.warning("Kodi does not have %s, removing this trailer from cache", db_movie_path)
+                self.log.info("Kodi does not have %s, removing this trailer from cache", db_movie_path)
                 self.db.delete_kodi_trailer_cache(db_movie_path)
                 continue
 
