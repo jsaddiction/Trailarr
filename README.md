@@ -1,44 +1,44 @@
 # Trailarr
 
-Download Trailers for your movies
+Automatically download and manage movie trailers for Radarr.
 
-#### Requirements
+## Requirements
 
-requests
-beautiful soup
+- Python 3.12+
+- `requests` (pip)
+- `yt-dlp` and `ffmpeg`/`ffprobe` (system tools, must be on PATH)
+- Running Radarr instance
 
-#### How it works
+## How it Works
 
--- Called from custom services/cron job --
-Once per week?
+### Called from Radarr (webhook)
 
-1. Get all movies radarr knows about
-2. Get all trailer urls from web
-3. Add any new urls to db
-4. Download any new urls, label broken links
-5. Select best video, store result in db
-6. Move selected to final destination
-7. Clean up temp directory
+On download/upgrade/rename events:
 
--- Called from radarr --
-On download/upgrade
+1. Query all trailer providers (TMDB, IMDb) for available trailers
+2. Deduplicate against previously downloaded URLs
+3. Download new trailers, retry previously broken ones if eligible
+4. Analyze video quality (resolution, codec, bitrate) via FFmpeg
+5. Select the best quality trailer using codec-weighted scoring
+6. Move selected trailer alongside the movie file
+7. Optionally sync trailer path to Kodi via JSON-RPC
+8. Clean up temp directory
 
-1. Get all trailer urls from web
-2. Add any new urls to db
-3. Download any new urls, label broken links
-4. Select best video file, store result in db
-5. Move selected to final destination
-6. Clean up temp dir
+### Called from CLI (cron job)
 
--- Called from TUI --
-User determined
+```bash
+python trailarr_cli.py -all              # Process all movies in Radarr
+python trailarr_cli.py -tmdb <ID>        # Process a specific movie by TMDB ID
+python trailarr_cli.py -all -quiet       # Suppress console output
+```
 
-1. User selects a movie
-2. Details of movie and trailer is shown
-3. Other options are displayed
-4. User selects a new trailer
-5. Results stored in db
-6. Download and move to final destination
-7. Clean up temp dir
+## Installation
 
-Adjust config in TUI?
+See `installer/` for automated setup scripts (Alpine Linux / Docker).
+
+## Configuration
+
+Copy `settings.ini.example` to `settings.ini` and configure:
+
+- `[LOGS]` — Log level
+- `[KODI]` — Kodi JSON-RPC connection (optional)

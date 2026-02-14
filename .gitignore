@@ -9,6 +9,10 @@ __pycache__/
 # Database
 *.db
 
+# Claude Code
+claude.md
+/.claude
+
 # Test files
 test_*.py
 /example_data
