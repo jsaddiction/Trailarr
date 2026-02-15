@@ -18,6 +18,8 @@ from trailarr.integrations.kodi import KodiApi
 from trailarr.providers import ProviderRegistry
 from trailarr.providers.tmdb import TmdbApi
 from trailarr.providers.imdb import ImdbScraper
+from trailarr.providers.state import ProviderStateManager, ProviderRunState
+from trailarr.stats import RunStats
 
 
 class TrailArr:
@@ -35,10 +37,27 @@ class TrailArr:
         self.radarr = RadarrApi()
         self.kodi = KodiApi(self.cfg.kodi_name, self.cfg.kodi_ip, self.cfg.kodi_port, self.cfg.kodi_user, self.cfg.kodi_pass)
 
+        # Initialize provider state management
+        self.state_manager = ProviderStateManager(self.db.conn)
+        self.run_stats = RunStats()
+        self.run_stats.provider_states = {
+            'TMDB': ProviderRunState(provider_name='TMDB'),
+            'IMDb': ProviderRunState(provider_name='IMDb'),
+        }
+
         # Provider registry — queries all providers and combines results
-        self.providers = ProviderRegistry()
-        self.providers.register(TmdbApi())
-        self.providers.register(ImdbScraper())
+        self.providers = ProviderRegistry(
+            state_manager=self.state_manager,
+            run_states=self.run_stats.provider_states
+        )
+        self.providers.register(TmdbApi(
+            run_state=self.run_stats.provider_states['TMDB'],
+            state_manager=self.state_manager
+        ))
+        self.providers.register(ImdbScraper(
+            run_state=self.run_stats.provider_states['IMDb'],
+            state_manager=self.state_manager
+        ))
 
     @property
     def has_write_permission(self) -> bool:
@@ -181,6 +200,13 @@ class TrailArr:
         """Download trailers not in db and return list of Downloads."""
         self.log.debug("Getting new trailers for %s", movie)
         downloads: list[Download] = []
+
+        # Check if we should query providers (TTL-based cache)
+        if not self.db.should_query_providers(movie.tmdb_id):
+            self.log.debug("Skipping provider query for tmdb_id=%d (within cache TTL)", movie.tmdb_id)
+            return downloads
+
+        # Query providers and update cache timestamp
         for tmdb_trailer in self.providers.get_all_trailers(movie.tmdb_id, imdb_id=movie.imdb_id):
             # Skip empty URLs
             if not tmdb_trailer.url:
@@ -209,6 +235,9 @@ class TrailArr:
             self.db.insert_download(dl)
             if not dl.file.broken:
                 downloads.append(dl)
+
+        # Update last_queried timestamp for this movie
+        self.db.update_last_queried(movie.tmdb_id)
 
         self.log.info("Found %s new trailers for %s", len(downloads), movie)
         return downloads
@@ -254,6 +283,8 @@ class TrailArr:
     def process_movie(self, movie: Movie):
         """Process the given movie."""
         self.log.info("Processing Movie: %s", movie)
+        self.run_stats.movies_processed += 1
+
         temp_trailers = self._get_new_trailers(movie)
         local_file = self._get_local_trailer(movie)
         best_trailer = self._best_trailer(movie.tmdb_id)
@@ -266,7 +297,7 @@ class TrailArr:
 
         # Return early if best trailer is already in place
         if local_file and best_trailer.file.hash == local_file.hash:
-            self.log.info("Best trailer is already in place for %s", movie)
+            self.log.debug("Best trailer is already in place for %s", movie)
             if local_file.path.stem != f"{movie.file_path.stem}-trailer":
                 self._move_trailer(local_file, movie)
                 self._update_kodi(movie, str(local_file.path))
@@ -292,6 +323,19 @@ class TrailArr:
             self.log.error("Best trailer not found in temp downloads for %s", movie)
             return
 
+        # Detect upgrade vs new trailer
+        if local_file:
+            self.run_stats.upgrade_trailer()
+            self.log.info(
+                "Upgrading trailer for %s (old: %s, new: %s)",
+                movie.title,
+                local_file.codec_name or "unknown",
+                best_trailer.file.codec_name or "unknown"
+            )
+        else:
+            self.run_stats.add_trailer()
+            self.log.info("Adding new trailer for %s", movie.title)
+
         self._delete_old_trailer(local_file)
         new_path = self._move_trailer(temp_trailer.file, movie)
         if not new_path:
@@ -303,8 +347,13 @@ class TrailArr:
         """Process all movies in Radarr."""
         movies = self.radarr.get_downloaded_movies()
         for movie in movies:
-            self.process_movie(movie)
-            self._cleanup_temp_folder()
+            try:
+                self.process_movie(movie)
+            except Exception:
+                self.log.exception("Failed to process movie: %s", movie.title)
+                # Continue to next movie instead of crashing
+            finally:
+                self._cleanup_temp_folder()
 
         # Cleanup unused db entries
         radarr_tmdb_ids = {x.tmdb_id for x in movies}

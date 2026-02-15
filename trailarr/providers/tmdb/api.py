@@ -24,11 +24,13 @@ class TmdbApi:
         "Connection": "close",
     }
 
-    def __init__(self, api_key: str = None) -> None:
+    def __init__(self, api_key: str = None, run_state=None, state_manager=None) -> None:
         self.log = logging.getLogger("TrailArr.TMDB")
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.session.params = {"api_key": api_key if api_key else API_KEY}
+        self.run_state = run_state
+        self.state_manager = state_manager
 
     @property
     def name(self) -> str:
@@ -42,20 +44,67 @@ class TmdbApi:
         while tries_remaining > 0:
             try:
                 res = self.session.get(url=url, params=params, timeout=time_out)
+
+                # Track request count if run_state is available
+                if self.run_state:
+                    self.run_state.request_count += 1
+
+                # Handle authentication errors
+                if res.status_code in (401, 403):
+                    error_msg = f"TMDB authentication failed ({res.status_code})"
+                    self.log.error(error_msg)
+                    if self.run_state:
+                        self.run_state.auth_failed = True
+                        self.run_state.errors.append(error_msg)
+                    return {}
+
+                # Handle rate limiting
+                if res.status_code == 429:
+                    retry_after = res.headers.get('Retry-After')
+                    warning_msg = f"TMDB rate limited (retry after: {retry_after})"
+                    self.log.warning(warning_msg)
+                    if self.run_state:
+                        self.run_state.warnings.append(warning_msg)
+                    if self.state_manager:
+                        self.state_manager.set_rate_limit('TMDB', retry_after)
+                    return {}
+
+                # Handle 404 - not an error, just no data
+                if res.status_code == 404:
+                    self.log.debug("Resource not found: %s", url)
+                    return {}
+
+                # Handle server errors
+                if res.status_code >= 500:
+                    warning_msg = f"TMDB server error ({res.status_code}) for {url}"
+                    self.log.warning(warning_msg)
+                    if self.run_state:
+                        self.run_state.warnings.append(warning_msg)
+                    return {}
+
+                # Raise for other HTTP errors
                 res.raise_for_status()
                 return res.json()
+
             except requests.Timeout:
                 tries_remaining -= 1
                 if tries_remaining > 0:
-                    self.log.warning(
+                    self.log.debug(
                         "Request to %s timed out after %ss. Retrying %s more times.", url, time_out, tries_remaining
                     )
                     continue
+                else:
+                    warning_msg = f"TMDB timeout after {time_out}s (retries exhausted)"
+                    self.log.warning(warning_msg)
+                    if self.run_state:
+                        self.run_state.warnings.append(warning_msg)
             except requests.exceptions.RequestException as e:
-                self.log.error("Failed to get %s. Error: %s", url, e)
+                warning_msg = f"TMDB request failed: {e}"
+                self.log.warning(warning_msg)
+                if self.run_state:
+                    self.run_state.warnings.append(warning_msg)
                 return {}
 
-        self.log.error("Request to %s timed out after %ss. Retries exhausted.", url, time_out)
         return {}
 
     def _parse_videos(self, tmdb_id: int, video_data: dict) -> TMDBVideo | None:
@@ -115,9 +164,22 @@ class TmdbApi:
         return videos
 
     def get_trailers(self, tmdb_id: int, imdb_id: str | None = None) -> list[TMDBVideo]:
-        """Get list of trailers given a tmdb movie id."""
+        """Get list of trailers given a tmdb movie id.
+
+        Filters to only 'Trailer' type (excludes Teaser, Featurette, Clip, etc.)
+        and prioritizes official trailers with "Official" in the name.
+        """
         self.log.debug("Getting trailers for movie: %s", tmdb_id)
-        return [video for video in self._get_videos(tmdb_id) if video.type == "Trailer"]
+
+        # Filter to only trailers (excludes teasers, featurettes, clips, etc.)
+        trailers = [video for video in self._get_videos(tmdb_id) if video.type == "Trailer"]
+
+        # Prioritize trailers with "Official" in the name
+        official_named = [t for t in trailers if t.name and 'official' in t.name.lower()]
+        other_trailers = [t for t in trailers if t.name and 'official' not in t.name.lower()]
+
+        # Return official-named first, then others
+        return official_named + other_trailers
 
     def get_page(self, movie_id: int) -> str:
         """Get TMDB page for movie."""

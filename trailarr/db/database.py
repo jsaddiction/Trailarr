@@ -48,6 +48,10 @@ BASE_TTL_DAYS = 10
 JITTER_DAYS = 3
 MAX_RETRIES = 5
 
+# Provider query cache parameters
+QUERY_CACHE_DAYS = 7  # Don't re-query providers for same movie within ~7 days
+QUERY_JITTER_DAYS = 2  # ±2 days random jitter
+
 
 class DB:
     """Database interface."""
@@ -132,7 +136,7 @@ class DB:
             with self.conn:
                 self.conn.execute(sql, data)
         except sqlite3.OperationalError as e:
-            self.log.error("Failed to insert %s. Error: %s", download, e)
+            self.log.warning("Failed to insert download %s: %s", download.tmdb.url, e)
 
     def mark_broken(self, tmdb_id: int, url: str) -> None:
         """Mark a download as broken and increment retry count."""
@@ -146,7 +150,7 @@ class DB:
             with self.conn:
                 self.conn.execute(sql, {"tmdb_id": tmdb_id, "url": url, "now": now})
         except sqlite3.OperationalError as e:
-            self.log.error("Failed to mark broken %s. Error: %s", url, e)
+            self.log.warning("Failed to mark broken %s: %s", url, e)
 
     def is_retryable(self, download: Download) -> bool:
         """Check if a broken download is eligible for retry."""
@@ -164,6 +168,48 @@ class DB:
         ttl = timedelta(days=BASE_TTL_DAYS + jitter)
         return datetime.now(timezone.utc) >= last + ttl
 
+    def should_query_providers(self, tmdb_id: int) -> bool:
+        """Check if we should query providers for this movie (TTL-based cache).
+
+        Returns True if:
+        - Movie has no downloads (never queried before)
+        - Last query was more than QUERY_CACHE_DAYS ± QUERY_JITTER_DAYS ago
+        """
+        # Get the most recent query time for this movie
+        sql = "SELECT MAX(last_queried_utc) FROM downloads WHERE tmdb_id = :tmdb_id"
+        with self.conn:
+            row = self.conn.execute(sql, {"tmdb_id": tmdb_id}).fetchone()
+
+        if not row or not row[0]:
+            # Never queried before
+            return True
+
+        try:
+            last_queried = datetime.fromisoformat(row[0])
+            if last_queried.tzinfo is None:
+                last_queried = last_queried.replace(tzinfo=timezone.utc)
+
+            # Calculate TTL with jitter (same per movie due to random seed based on tmdb_id)
+            random.seed(tmdb_id)
+            jitter = random.uniform(-QUERY_JITTER_DAYS, QUERY_JITTER_DAYS)
+            random.seed()  # Reset seed
+            ttl = timedelta(days=QUERY_CACHE_DAYS + jitter)
+
+            return datetime.now(timezone.utc) >= last_queried + ttl
+        except (ValueError, TypeError):
+            # Invalid timestamp, allow query
+            return True
+
+    def update_last_queried(self, tmdb_id: int) -> None:
+        """Update last_queried_utc for all downloads for this movie."""
+        now = datetime.now(timezone.utc).isoformat()
+        sql = "UPDATE downloads SET last_queried_utc = :now WHERE tmdb_id = :tmdb_id"
+        try:
+            with self.conn:
+                self.conn.execute(sql, {"now": now, "tmdb_id": tmdb_id})
+        except sqlite3.OperationalError as e:
+            self.log.warning("Failed to update last_queried_utc for tmdb_id=%d: %s", tmdb_id, e)
+
     def insert_kodi_trailer_cache(self, movie_path: str, trailer_path: str) -> None:
         """Insert kodi trailer cache into database."""
         sql = """INSERT OR REPLACE INTO kodi_trailer_cache
@@ -174,7 +220,7 @@ class DB:
             with self.conn:
                 self.conn.execute(sql, {"movie_path": movie_path, "trailer_path": trailer_path})
         except sqlite3.OperationalError as e:
-            self.log.error("Failed to insert kodi trailer cache. Error: %s", e)
+            self.log.warning("Failed to insert kodi trailer cache: %s", e)
 
     def select_kodi_trailer_cache(self) -> list[tuple[int, str, str]]:
         """Select kodi trailer cache from database."""
@@ -193,7 +239,7 @@ class DB:
             with self.conn:
                 self.conn.execute(sql, {"movie_path": movie_path})
         except sqlite3.OperationalError as e:
-            self.log.error("Failed to delete kodi trailer cache. Error: %s", e)
+            self.log.warning("Failed to delete kodi trailer cache: %s", e)
 
     def select_by_url(self, url: str) -> Download | None:
         """Select download by url."""

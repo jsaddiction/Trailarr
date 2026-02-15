@@ -64,5 +64,12 @@ def main():
             args.parser.print_help()
     except KeyboardInterrupt:
         log.info("Trailarr has been stopped")
+    except Exception:
+        log.exception("Unexpected error during processing")
+    finally:
+        # ALWAYS print summary (even in quiet mode) - bypasses logging system
+        from trailarr.report import generate_summary_report
+        summary = generate_summary_report(app.run_stats, app.state_manager)
+        print(summary)
 
     app.exit()

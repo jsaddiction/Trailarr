@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -18,17 +19,22 @@ class YouTubeDLP:
         self.upgrade()
 
     def upgrade(self) -> None:
-        """Non-fatal self-update of yt-dlp to nightly channel."""
+        """Non-fatal self-update of yt-dlp to latest version via pip."""
         self.log.info("Checking for yt-dlp updates...")
-        cmd = ["yt-dlp", "--update-to", "nightly"]
+        # Use pip to update to latest version (includes nightly fixes)
+        # --break-system-packages is required in Alpine/Docker environments
+        cmd = [sys.executable, "-m", "pip", "install", "-U", "--pre", "--break-system-packages", "yt-dlp"]
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=60)
             stdout = result.stdout.decode().strip()
             stderr = result.stderr.decode().strip()
 
             if result.returncode == 0:
-                update_str = stdout.split("\n")[-1] if stdout else "No output"
-                self.log.info("yt-dlp update: %s", update_str)
+                # Check if it was already up to date or if it updated
+                if "already satisfied" in stdout.lower() or "already up-to-date" in stdout.lower():
+                    self.log.debug("yt-dlp is already up to date")
+                else:
+                    self.log.info("yt-dlp updated successfully")
             else:
                 self.log.warning(
                     "yt-dlp update returned code %d: %s",
@@ -37,7 +43,7 @@ class YouTubeDLP:
         except subprocess.TimeoutExpired:
             self.log.warning("yt-dlp update timed out after 60s, continuing with current version")
         except FileNotFoundError:
-            self.log.warning("yt-dlp not found on PATH, skipping update")
+            self.log.warning("pip not found, skipping yt-dlp update")
         except Exception:
             self.log.exception("Unexpected error during yt-dlp update, continuing with current version")
 

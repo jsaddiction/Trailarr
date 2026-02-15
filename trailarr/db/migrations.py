@@ -40,7 +40,11 @@ def _migration_001_add_retry_columns(conn: sqlite3.Connection) -> None:
     if "last_attempted" not in existing:
         conn.execute("ALTER TABLE downloads ADD COLUMN last_attempted TEXT")
     if "created_at" not in existing:
-        conn.execute("ALTER TABLE downloads ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))")
+        # SQLite ALTER TABLE only accepts constant defaults, not function calls
+        # Add column as nullable first, populate it, then we rely on app-level defaults
+        conn.execute("ALTER TABLE downloads ADD COLUMN created_at TEXT")
+        # Set current timestamp for existing rows
+        conn.execute("UPDATE downloads SET created_at = datetime('now') WHERE created_at IS NULL")
 
 
 def _migration_002_add_imdb_id(conn: sqlite3.Connection) -> None:
@@ -51,10 +55,31 @@ def _migration_002_add_imdb_id(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE downloads ADD COLUMN imdb_id TEXT")
 
 
+def _migration_003_create_provider_state(conn: sqlite3.Connection) -> None:
+    """Create provider_state table for tracking rate limits."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS provider_state (
+            provider_name TEXT PRIMARY KEY,
+            rate_limited_until_utc TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+
+def _migration_004_add_last_queried(conn: sqlite3.Connection) -> None:
+    """Add last_queried_utc column to track provider query TTL per movie."""
+    existing = _get_existing_columns(conn, "downloads")
+
+    if "last_queried_utc" not in existing:
+        conn.execute("ALTER TABLE downloads ADD COLUMN last_queried_utc TEXT")
+
+
 # Register all migrations here, in order
 MIGRATIONS: list[Migration] = [
     (1, "Add retry tracking columns (retry_count, last_attempted, created_at)", _migration_001_add_retry_columns),
     (2, "Add imdb_id column to downloads", _migration_002_add_imdb_id),
+    (3, "Create provider_state table for rate limit tracking", _migration_003_create_provider_state),
+    (4, "Add last_queried_utc for provider query TTL", _migration_004_add_last_queried),
 ]
 
 
