@@ -24,16 +24,6 @@ class RunStats:
         """Increment trailers upgraded counter."""
         self.trailers_upgraded += 1
 
-    def all_warnings(self) -> list[str]:
-        """Collect all warnings from all providers."""
-        warnings = []
-        for state in self.provider_states.values():
-            warnings.extend(state.warnings)
-        return warnings
-
-    def all_errors(self) -> list[str]:
-        """Collect all errors from all providers."""
-        errors = []
-        for state in self.provider_states.values():
-            errors.extend(state.errors)
-        return errors
+    def total_transient_errors(self) -> int:
+        """Get total count of transient errors across all providers."""
+        return sum(state.transient_error_count for state in self.provider_states.values())

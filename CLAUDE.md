@@ -10,22 +10,36 @@ There is no web server, API, or frontend. It runs as either a Radarr custom scri
 
 ## Running the Application
 
-```bash
-# Webhook mode (triggered by Radarr with environment variables)
-python trailarr.py
+**This application runs inside a Docker container** with different paths than the host system.
 
-# CLI mode
-python trailarr_cli.py -all              # Process all movies in Radarr
-python trailarr_cli.py -tmdb <ID>        # Process a specific movie by TMDB ID
-python trailarr_cli.py -all -quiet       # Suppress console output
+```bash
+# Inside container (has yt-dlp, ffmpeg, ffprobe)
+docker exec radarr /config/scripts/Trailarr/trailarr_cli.py -all
+docker exec radarr /config/scripts/Trailarr/trailarr_cli.py -tmdb <ID>
+docker exec radarr /config/scripts/Trailarr/trailarr_cli.py -all -quiet
+
+# Container paths vs host paths:
+# - Host:      /apps/radarr/config/scripts/Trailarr/
+# - Container: /config/scripts/Trailarr/
+# - Movies:    /var/nfs/movies/ (inside container)
+# - Radarr config: /config/config.xml (inside container)
+```
+
+**Direct execution (not recommended - use Docker):**
+```bash
+python trailarr.py                       # Webhook mode (triggered by Radarr)
+python trailarr_cli.py -all              # Process all movies
+python trailarr_cli.py -tmdb <ID>        # Process specific movie
 ```
 
 ## Dependencies
 
 - **Python**: 3.12+ (uses `match`/`case`, `X | Y` type unions, `typing.Protocol`)
-- **pip**: `pip install -r requirements.txt` (only `requests`)
-- **System tools required**: `yt-dlp`, `ffmpeg`/`ffprobe` (must be on PATH)
+- **pip**: `pip install -r requirements.txt` (`requests`, `beautifulsoup4`)
+- **System tools required**: `yt-dlp`, `ffmpeg`, `ffprobe` (available in Docker container)
 - **Services**: Running Radarr instance, TMDB API access, optional Kodi
+
+**Note:** `ffmpeg` and `ffprobe` are installed in the Radarr Docker container and available for media analysis/manipulation.
 
 ## Architecture
 

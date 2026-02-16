@@ -67,8 +67,7 @@ class DB:
             for index in INDICES:
                 self.conn.execute(index)
 
-        # Apply any pending migrations
-        run_migrations(self.conn)
+        # Migrations will be run after app is fully initialized
 
     def __del__(self) -> None:
         self.close()
@@ -168,20 +167,28 @@ class DB:
         ttl = timedelta(days=BASE_TTL_DAYS + jitter)
         return datetime.now(timezone.utc) >= last + ttl
 
-    def should_query_providers(self, tmdb_id: int) -> bool:
-        """Check if we should query providers for this movie (TTL-based cache).
+    def should_query_provider(self, tmdb_id: int, provider_name: str) -> bool:
+        """Check if we should query a specific provider for this movie (TTL-based cache).
 
         Returns True if:
-        - Movie has no downloads (never queried before)
+        - Provider has never been queried for this movie
         - Last query was more than QUERY_CACHE_DAYS ± QUERY_JITTER_DAYS ago
+
+        Args:
+            tmdb_id: Movie ID
+            provider_name: Provider to check (TMDB, IMDb, AppleTV)
+
+        Returns:
+            True if provider should be queried, False if within cache TTL
         """
-        # Get the most recent query time for this movie
-        sql = "SELECT MAX(last_queried_utc) FROM downloads WHERE tmdb_id = :tmdb_id"
+        sql = """SELECT last_queried_utc FROM movie_provider_queries
+                 WHERE tmdb_id = :tmdb_id AND provider_name = :provider"""
+
         with self.conn:
-            row = self.conn.execute(sql, {"tmdb_id": tmdb_id}).fetchone()
+            row = self.conn.execute(sql, {"tmdb_id": tmdb_id, "provider": provider_name}).fetchone()
 
         if not row or not row[0]:
-            # Never queried before
+            # Never queried this provider for this movie
             return True
 
         try:
@@ -189,8 +196,8 @@ class DB:
             if last_queried.tzinfo is None:
                 last_queried = last_queried.replace(tzinfo=timezone.utc)
 
-            # Calculate TTL with jitter (same per movie due to random seed based on tmdb_id)
-            random.seed(tmdb_id)
+            # Calculate TTL with jitter (same per movie+provider due to consistent seed)
+            random.seed(f"{tmdb_id}:{provider_name}")
             jitter = random.uniform(-QUERY_JITTER_DAYS, QUERY_JITTER_DAYS)
             random.seed()  # Reset seed
             ttl = timedelta(days=QUERY_CACHE_DAYS + jitter)
@@ -200,15 +207,45 @@ class DB:
             # Invalid timestamp, allow query
             return True
 
-    def update_last_queried(self, tmdb_id: int) -> None:
-        """Update last_queried_utc for all downloads for this movie."""
+    def update_provider_query(self, tmdb_id: int, provider_name: str) -> None:
+        """Record that a provider was queried for this movie.
+
+        Updates movie_provider_queries table with timestamp and increments query_count.
+
+        Args:
+            tmdb_id: Movie ID
+            provider_name: Provider that was queried (TMDB, IMDb, AppleTV)
+        """
         now = datetime.now(timezone.utc).isoformat()
-        sql = "UPDATE downloads SET last_queried_utc = :now WHERE tmdb_id = :tmdb_id"
+
+        # UPSERT: insert if new, update if exists
+        sql = """
+            INSERT INTO movie_provider_queries (tmdb_id, provider_name, last_queried_utc, query_count)
+            VALUES (:tmdb_id, :provider, :now, 1)
+            ON CONFLICT(tmdb_id, provider_name) DO UPDATE SET
+                last_queried_utc = :now,
+                query_count = query_count + 1
+        """
+
         try:
             with self.conn:
-                self.conn.execute(sql, {"now": now, "tmdb_id": tmdb_id})
+                self.conn.execute(sql, {"tmdb_id": tmdb_id, "provider": provider_name, "now": now})
         except sqlite3.OperationalError as e:
-            self.log.warning("Failed to update last_queried_utc for tmdb_id=%d: %s", tmdb_id, e)
+            self.log.warning("Failed to update provider query for tmdb_id=%d provider=%s: %s",
+                           tmdb_id, provider_name, e)
+
+    def update_provider_queries(self, tmdb_id: int, provider_names: set[str]) -> None:
+        """Record that multiple providers were queried for this movie.
+
+        Args:
+            tmdb_id: Movie ID
+            provider_names: Set of provider names that were queried successfully
+        """
+        if not provider_names:
+            return
+
+        for provider_name in provider_names:
+            self.update_provider_query(tmdb_id, provider_name)
 
     def insert_kodi_trailer_cache(self, movie_path: str, trailer_path: str) -> None:
         """Insert kodi trailer cache into database."""

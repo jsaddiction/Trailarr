@@ -1,2 +1,3 @@
 requests>=2.31.0
 yt-dlp
+beautifulsoup4>=4.12.3

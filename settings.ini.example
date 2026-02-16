@@ -7,6 +7,12 @@
 [LOGS]
 log_level: INFO
 
+[TRAILERS]
+# Maximum resolution for trailer downloads (360, 480, 720, 1080, 2160)
+# Default: 1080 (Full HD)
+# Set to 2160 for 4K trailers (larger file sizes)
+max_resolution: 1080
+
 [KODI]
 kodi_name: 
 kodi_ip: 127.0.0.1

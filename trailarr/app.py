@@ -18,6 +18,7 @@ from trailarr.integrations.kodi import KodiApi
 from trailarr.providers import ProviderRegistry
 from trailarr.providers.tmdb import TmdbApi
 from trailarr.providers.imdb import ImdbScraper
+from trailarr.providers.appletv import AppleTVProvider
 from trailarr.providers.state import ProviderStateManager, ProviderRunState
 from trailarr.stats import RunStats
 
@@ -43,6 +44,7 @@ class TrailArr:
         self.run_stats.provider_states = {
             'TMDB': ProviderRunState(provider_name='TMDB'),
             'IMDb': ProviderRunState(provider_name='IMDb'),
+            'AppleTV': ProviderRunState(provider_name='AppleTV'),
         }
 
         # Provider registry — queries all providers and combines results
@@ -50,14 +52,24 @@ class TrailArr:
             state_manager=self.state_manager,
             run_states=self.run_stats.provider_states
         )
-        self.providers.register(TmdbApi(
+        tmdb_api = TmdbApi(
             run_state=self.run_stats.provider_states['TMDB'],
             state_manager=self.state_manager
-        ))
+        )
+        self.providers.register(tmdb_api)
         self.providers.register(ImdbScraper(
             run_state=self.run_stats.provider_states['IMDb'],
             state_manager=self.state_manager
         ))
+        self.providers.register(AppleTVProvider(
+            tmdb_api=tmdb_api,
+            run_state=self.run_stats.provider_states['AppleTV'],
+            state_manager=self.state_manager
+        ))
+
+        # Run migrations (all dependencies initialized above)
+        from trailarr.db.migrations import run_migrations
+        run_migrations(self.db.conn, radarr_api=self.radarr, ffmpeg_api=self.ffmpeg)
 
     @property
     def has_write_permission(self) -> bool:
@@ -183,7 +195,7 @@ class TrailArr:
     def _download_trailer(self, tmdb_data: TMDBVideo) -> Download | None:
         """Download a trailer into the temp folder."""
         try:
-            trailer_path = self.ytdlp.download(tmdb_data.url)
+            trailer_path = self.ytdlp.download(tmdb_data.url, max_resolution=self.cfg.max_resolution)
         except YTDLPError as e:
             self.log.error("Failed to download %s. Error: %s", tmdb_data.url, e)
             return Download(tmdb=tmdb_data, file=FileDetails(broken=True))
@@ -201,13 +213,16 @@ class TrailArr:
         self.log.debug("Getting new trailers for %s", movie)
         downloads: list[Download] = []
 
-        # Check if we should query providers (TTL-based cache)
-        if not self.db.should_query_providers(movie.tmdb_id):
-            self.log.debug("Skipping provider query for tmdb_id=%d (within cache TTL)", movie.tmdb_id)
-            return downloads
+        # Query providers - registry checks per-provider TTL internally
+        # Returns trailers and set of providers that succeeded
+        all_trailers, providers_succeeded = self.providers.get_all_trailers(
+            movie.tmdb_id,
+            imdb_id=movie.imdb_id,
+            db=self.db
+        )
 
-        # Query providers and update cache timestamp
-        for tmdb_trailer in self.providers.get_all_trailers(movie.tmdb_id, imdb_id=movie.imdb_id):
+        # Download and insert new trailers
+        for tmdb_trailer in all_trailers:
             # Skip empty URLs
             if not tmdb_trailer.url:
                 continue
@@ -236,8 +251,14 @@ class TrailArr:
             if not dl.file.broken:
                 downloads.append(dl)
 
-        # Update last_queried timestamp for this movie
-        self.db.update_last_queried(movie.tmdb_id)
+        # Update query timestamp ONLY for providers that succeeded
+        # This allows per-provider retry: if IMDb had a 502, only IMDb retries on next run
+        if providers_succeeded:
+            self.db.update_provider_queries(movie.tmdb_id, providers_succeeded)
+            self.log.debug("Updated query timestamps for tmdb_id=%d providers: %s",
+                         movie.tmdb_id, ', '.join(sorted(providers_succeeded)))
+        else:
+            self.log.debug("No providers succeeded for tmdb_id=%d - all will retry on next run", movie.tmdb_id)
 
         self.log.info("Found %s new trailers for %s", len(downloads), movie)
         return downloads
@@ -272,12 +293,17 @@ class TrailArr:
                 self.kodi.notify("New Trailer Added", trailer_file_name)
 
     def _best_trailer(self, tmdb_id: int) -> Download | None:
-        """Get the best trailer for the given movie."""
+        """
+        Get the best trailer for the given movie.
+
+        Uses selection_score which combines quality metrics with name-based filtering
+        to prefer clean official trailers over commentary/marketing versions.
+        """
         trailers = self.db.select_by_tmdb_id(tmdb_id)
         if not trailers:
             return None
         trailers = [x for x in trailers if not x.file.broken]
-        trailers.sort(key=lambda x: x.file.quality_score, reverse=True)
+        trailers.sort(key=lambda x: x.selection_score, reverse=True)
         return trailers[0] if trailers else None
 
     def process_movie(self, movie: Movie):

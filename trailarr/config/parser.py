@@ -27,11 +27,18 @@ def get_config(config_path: Path) -> Config:
         log.warning("No LOGS section found in %s", config_path)
         return config
 
+    if "TRAILERS" not in parser.sections():
+        log.warning("No TRAILERS section found in %s", config_path)
+
     if "KODI" not in parser.sections():
         log.warning("No KODI section found in %s", config_path)
         return config
 
     config.log_level = parser["LOGS"].get("log_level", config.log_level)
+
+    if "TRAILERS" in parser.sections():
+        config.max_resolution = parser["TRAILERS"].getint("max_resolution", config.max_resolution)
+
     config.kodi_name = parser["KODI"].get("kodi_name", config.kodi_name)
     config.kodi_ip = parser["KODI"].get("kodi_ip", config.kodi_ip)
     config.kodi_port = parser["KODI"].getint("kodi_port", config.kodi_port)

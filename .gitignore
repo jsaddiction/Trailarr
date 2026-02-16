@@ -8,9 +8,10 @@ __pycache__/
 
 # Database
 *.db
+*.db*
 
 # Claude Code
-claude.md
+CLAUDE.md
 /.claude
 
 # Test files

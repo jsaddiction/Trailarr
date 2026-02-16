@@ -34,32 +34,24 @@ def generate_summary_report(stats: RunStats, state_manager: ProviderStateManager
             status = f"⏸ Rate limited until {expires_at.strftime('%Y-%m-%d %H:%M UTC')}"
         elif run_state.auth_failed:
             status = "✗ Authentication failed"
+        elif run_state.transient_error_count > 0:
+            status = f"⚠ {run_state.transient_error_count} transient errors"
         else:
             status = "✓"
 
-        lines.append(f"  {provider_name}: {status} ({run_state.request_count} requests)")
+        # Show breakdown: requests (successes/errors)
+        if run_state.success_count > 0 or run_state.transient_error_count > 0:
+            detail = f"({run_state.request_count} requests: {run_state.success_count} ok, {run_state.transient_error_count} errors)"
+        else:
+            detail = f"({run_state.request_count} requests)"
 
-    # Collect warnings
-    warnings = stats.all_warnings()
-    if warnings:
-        lines.append("")
-        lines.append(f"Warnings: {len(warnings)}")
-        # Limit to 10 warnings to avoid overwhelming output
-        for warning in warnings[:10]:
-            lines.append(f"  • {warning}")
-        if len(warnings) > 10:
-            lines.append(f"  ... and {len(warnings) - 10} more")
+        lines.append(f"  {provider_name}: {status} {detail}")
 
-    # Collect errors
-    errors = stats.all_errors()
-    if errors:
+    # Show total transient errors if any occurred
+    total_errors = stats.total_transient_errors()
+    if total_errors > 0:
         lines.append("")
-        lines.append(f"Errors: {len(errors)}")
-        # Limit to 10 errors to avoid overwhelming output
-        for error in errors[:10]:
-            lines.append(f"  • {error}")
-        if len(errors) > 10:
-            lines.append(f"  ... and {len(errors) - 10} more")
+        lines.append(f"Note: {total_errors} transient error(s) - affected movies will retry on next run")
 
     lines.append("=" * 60)
 

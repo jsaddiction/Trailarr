@@ -147,6 +147,16 @@ class TmdbApi:
     def __del__(self) -> None:
         self.close()
 
+    def get_movie(self, movie_id: int) -> dict:
+        """
+        Get movie details from TMDB.
+
+        Returns dict with keys: title, original_title, release_date, etc.
+        Returns empty dict on failure.
+        """
+        endpoint = f"movie/{movie_id}"
+        return self._get(endpoint=endpoint)
+
     def _get_videos(self, movie_id: int) -> list[TMDBVideo]:
         """Get list of videos given a tmdb movie id."""
         endpoint = f"movie/{movie_id}/videos"

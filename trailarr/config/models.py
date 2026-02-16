@@ -8,6 +8,7 @@ class Config:
     """Trailarr Configuration"""
 
     log_level: str = field(default="INFO")
+    max_resolution: int = field(default=1080)
     kodi_name: str = field(default="")
     kodi_ip: str = field(default="127.0.0.1")
     kodi_port: int = field(default=8080)
@@ -21,6 +22,7 @@ class Config:
         return all(
             [
                 self.log_level == "INFO",
+                self.max_resolution == 1080,
                 self.kodi_name == "",
                 self.kodi_ip == "127.0.0.1",
                 self.kodi_port == 8080,

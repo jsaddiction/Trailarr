@@ -39,17 +39,17 @@ class ImdbScraper:
         url = self.IMDB_VIDEOS_URL.format(imdb_id=imdb_id)
         try:
             resp = self.session.get(url, timeout=self.TIMEOUT)
-        except requests.Timeout as e:
-            warning_msg = f"IMDb timeout for {imdb_id}: {e}"
-            self.log.warning(warning_msg)
+        except requests.Timeout:
+            # Transient network error - will retry on next run
+            self.log.warning("IMDb timeout for %s - will retry on next run", imdb_id)
             if self.run_state:
-                self.run_state.warnings.append(warning_msg)
+                self.run_state.transient_error_count += 1
             return []
         except requests.RequestException as e:
-            warning_msg = f"IMDb request failed for {imdb_id}: {e}"
-            self.log.warning(warning_msg)
+            # Transient network error - will retry on next run
+            self.log.warning("IMDb request failed for %s: %s - will retry on next run", imdb_id, e)
             if self.run_state:
-                self.run_state.warnings.append(warning_msg)
+                self.run_state.transient_error_count += 1
             return []
 
         # Track request count
@@ -58,39 +58,40 @@ class ImdbScraper:
 
         # Handle non-200 responses
         if resp.status_code == 401 or resp.status_code == 403:
-            error_msg = f"IMDb authentication failed ({resp.status_code}) for {imdb_id}"
-            self.log.error(error_msg)
+            # Auth failure - skip provider for rest of THIS RUN
+            self.log.error("IMDb authentication failed (%d) for %s", resp.status_code, imdb_id)
             if self.run_state:
                 self.run_state.auth_failed = True
-                self.run_state.errors.append(error_msg)
             return []
 
         if resp.status_code == 429:
+            # Rate limit - store in DB, skip provider until expiry
             retry_after = resp.headers.get('Retry-After')
-            warning_msg = f"IMDb rate limited for {imdb_id} (retry after: {retry_after})"
-            self.log.warning(warning_msg)
-            if self.run_state:
-                self.run_state.warnings.append(warning_msg)
+            self.log.warning("IMDb rate limited for %s (retry after: %s)", imdb_id, retry_after)
             if self.state_manager:
                 self.state_manager.set_rate_limit('IMDb', retry_after)
             return []
 
         if resp.status_code == 404:
+            # Movie not found on IMDb - record as semi-permanent failure (60-day retry)
             self.log.debug("IMDb page not found for %s", imdb_id)
+            if self.state_manager:
+                self.state_manager.set_movie_failure(tmdb_id, 'IMDb', '404_not_found', retry_days=60)
             return []
 
         if resp.status_code >= 500:
-            warning_msg = f"IMDb server error ({resp.status_code}) for {imdb_id}"
-            self.log.warning(warning_msg)
+            # Transient server error - will retry on next run
+            self.log.warning("IMDb server error (%d) for %s - will retry on next run", resp.status_code, imdb_id)
             if self.run_state:
-                self.run_state.warnings.append(warning_msg)
+                self.run_state.transient_error_count += 1
             return []
 
         if resp.status_code != 200:
-            warning_msg = f"IMDb returned {resp.status_code} for {imdb_id}: {resp.reason}"
-            self.log.warning(warning_msg)
+            # Other unexpected status - treat as transient
+            self.log.warning("IMDb returned %d for %s: %s - will retry on next run",
+                           resp.status_code, imdb_id, resp.reason)
             if self.run_state:
-                self.run_state.warnings.append(warning_msg)
+                self.run_state.transient_error_count += 1
             return []
 
         # Extract video IDs with their type labels from aria-label attributes
@@ -136,6 +137,11 @@ class ImdbScraper:
         trailers = (official_trailers + other_trailers)[:self.MAX_TRAILERS]
 
         self.log.info("Found %d trailer URLs on IMDb for %s", len(trailers), imdb_id)
+
+        # Track successful query
+        if self.run_state:
+            self.run_state.success_count += 1
+
         return trailers
 
     def test(self) -> bool:

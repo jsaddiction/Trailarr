@@ -80,3 +80,43 @@ class Download:
     retry_count: int = field(default=0, repr=False, compare=False)
     last_attempted: str | None = field(default=None, repr=False, compare=False)
     created_at: str | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def selection_score(self) -> float:
+        """
+        Calculate selection score for choosing best trailer.
+
+        Combines quality score with name-based filtering and source preferences
+        to prefer clean official trailers over commentary/marketing versions
+        while still respecting significant quality differences.
+
+        Returns:
+            Weighted score (higher is better, 0.0 if broken/invalid)
+        """
+        if not self.file or self.file.broken:
+            return 0.0
+
+        base_score = self.file.quality_score
+        if base_score == 0.0:
+            return 0.0
+
+        # Start with base quality
+        score = base_score
+
+        # Apply name-based penalties/boosts
+        if self.tmdb and self.tmdb.name:
+            name_lower = self.tmdb.name.lower()
+
+            # Heavy penalty for commentary/special features
+            if "commentary" in name_lower or "with commentary" in name_lower:
+                score *= 0.5
+
+            # Penalty for marketing fluff
+            if "watch now" in name_lower or "available now" in name_lower:
+                score *= 0.85
+
+            # Small boost for explicit "official" naming
+            if "official" in name_lower:
+                score *= 1.1
+
+        return score

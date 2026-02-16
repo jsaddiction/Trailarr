@@ -15,6 +15,7 @@ class CLIConfig:
     tmdb: int = None
     all: bool = False
     quiet: bool = False
+    migrate: bool = False
     parser: ArgumentParser = None
 
 
@@ -27,9 +28,10 @@ def get_arguments() -> CLIConfig:
     parser.add_argument("-tmdb", metavar="TMDB id", dest="tmdb", help="TMDB id of the movie", type=int, default=None)
     parser.add_argument("-all", action="store_true", dest="all", help="Process all movies in Radarr", default=False)
     parser.add_argument("-quiet", action="store_true", dest="quiet", help="Suppress console output", default=False)
+    parser.add_argument("--migrate", action="store_true", dest="migrate", help="Run pending data migrations", default=False)
 
     cfg = parser.parse_args()
-    return CLIConfig(tmdb=cfg.tmdb, all=cfg.all, quiet=cfg.quiet, parser=parser)
+    return CLIConfig(tmdb=cfg.tmdb, all=cfg.all, quiet=cfg.quiet, migrate=cfg.migrate, parser=parser)
 
 
 def config_logging(app: TrailArr, quiet: bool = False):
@@ -44,13 +46,21 @@ def config_logging(app: TrailArr, quiet: bool = False):
 
 def main():
     """Run the application."""
-    app = TrailArr()
+    args = get_arguments()
+
+    app = TrailArr()  # Migrations run at end of __init__
     log = logging.getLogger("Trailarr.CLI")
 
-    args = get_arguments()
     config_logging(app, args.quiet)
 
     try:
+        # Handle --migrate flag (migrations already ran in __init__, just exit)
+        if args.migrate:
+            log.info("Migrations complete!")
+            app.exit()
+            return
+
+        # Normal processing
         if args.all and args.tmdb is None:
             app.process_all()
         elif args.tmdb and not args.all:
@@ -62,14 +72,16 @@ def main():
         else:
             log.warning("You must specify a TMDB id or use the -all flag.")
             args.parser.print_help()
+            return
     except KeyboardInterrupt:
         log.info("Trailarr has been stopped")
     except Exception:
         log.exception("Unexpected error during processing")
     finally:
-        # ALWAYS print summary (even in quiet mode) - bypasses logging system
-        from trailarr.report import generate_summary_report
-        summary = generate_summary_report(app.run_stats, app.state_manager)
-        print(summary)
+        # Only print summary if we actually processed movies
+        if not args.migrate and (args.all or args.tmdb):
+            from trailarr.report import generate_summary_report
+            summary = generate_summary_report(app.run_stats, app.state_manager)
+            print(summary)
 
     app.exit()
