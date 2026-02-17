@@ -2,7 +2,7 @@
 
 import logging
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
@@ -18,8 +18,9 @@ class ProviderRunState:
     provider_name: str
     auth_failed: bool = False  # Set on 401/403 - skip provider for THIS RUN only
     request_count: int = 0
-    success_count: int = 0  # Successful queries (200 responses with data)
     transient_error_count: int = 0  # 5xx errors, timeouts (retry on next run)
+    errors: list[str] = field(default_factory=list)  # Error messages for run summary
+    warnings: list[str] = field(default_factory=list)  # Warning messages for run summary
 
 
 class ProviderStateManager:

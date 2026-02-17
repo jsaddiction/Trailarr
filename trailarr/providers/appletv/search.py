@@ -77,7 +77,7 @@ def search_apple_tv(
     5. Require title similarity ≥min_title_score
     """
     if log is None:
-        log = logging.getLogger(__name__)
+        log = logging.getLogger("TrailArr.Providers.AppleTV")
 
     # URL encode the search term
     search_term = quote(title)

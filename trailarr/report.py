@@ -31,17 +31,17 @@ def generate_summary_report(stats: RunStats, state_manager: ProviderStateManager
         is_limited, expires_at = state_manager.is_rate_limited(provider_name)
 
         if is_limited and expires_at:
-            status = f"⏸ Rate limited until {expires_at.strftime('%Y-%m-%d %H:%M UTC')}"
+            status = f"[PAUSED] Rate limited until {expires_at.strftime('%Y-%m-%d %H:%M UTC')}"
         elif run_state.auth_failed:
-            status = "✗ Authentication failed"
+            status = "[FAIL] Authentication failed"
         elif run_state.transient_error_count > 0:
-            status = f"⚠ {run_state.transient_error_count} transient errors"
+            status = f"[WARN] {run_state.transient_error_count} transient errors"
         else:
-            status = "✓"
+            status = "[OK]"
 
-        # Show breakdown: requests (successes/errors)
-        if run_state.success_count > 0 or run_state.transient_error_count > 0:
-            detail = f"({run_state.request_count} requests: {run_state.success_count} ok, {run_state.transient_error_count} errors)"
+        # Show breakdown: requests (failures if any)
+        if run_state.transient_error_count > 0:
+            detail = f"({run_state.request_count} requests, {run_state.transient_error_count} errors)"
         else:
             detail = f"({run_state.request_count} requests)"
 
