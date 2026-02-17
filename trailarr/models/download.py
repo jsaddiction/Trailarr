@@ -7,7 +7,7 @@ CODEC_WEIGHTS = {
     "mpeg4": 0.6,
     "h263": 0.6,
     "h264": 1.0,
-    "h265": 1.5,
+    "hevc": 1.5,
     "vp8": 0.9,
     "vp9": 1.3,
     "av1": 1.7,
@@ -31,29 +31,29 @@ class FileDetails:
     @property
     def frame_rate(self) -> float:
         """Calculate frame rate."""
-        if self.frames and self.duration:
+        if self.frames is not None and self.duration is not None and self.duration > 0:
             return self.frames / self.duration
         return 0.0
 
     @property
-    def total_pixels(self) -> int:
+    def total_pixels(self) -> float:
         """Calculate number of pixels."""
-        if self.height and self.width and self.duration:
+        if self.height is not None and self.width is not None and self.duration is not None and self.duration > 0:
             return self.height * self.width * self.duration
-        return 0
+        return 0.0
 
     @property
-    def total_bits(self) -> int:
+    def total_bits(self) -> float:
         """Calculate total bits."""
-        if self.bitrate and self.duration:
+        if self.bitrate is not None and self.duration is not None and self.duration > 0:
             return self.bitrate * self.duration
-        return 0
+        return 0.0
 
     @property
     def quality_score(self) -> float:
         """Calculate quality score. Based on Bits per Pixel."""
         if self.total_pixels and self.total_bits:
-            codec_weight = CODEC_WEIGHTS.get(self.codec_name, 1.0)
+            codec_weight = CODEC_WEIGHTS.get(self.codec_name.lower() if self.codec_name else None, 1.0)
             return (self.total_bits / self.total_pixels) * codec_weight
         return 0.0
 

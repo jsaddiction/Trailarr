@@ -1,6 +1,8 @@
 """YT-DLP Downloader CLI Interface."""
 
+import json
 import logging
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -44,14 +46,14 @@ class YouTubeDLP:
             self.log.warning("yt-dlp update timed out after 60s, continuing with current version")
         except FileNotFoundError:
             self.log.warning("pip not found, skipping yt-dlp update")
-        except Exception:
+        except OSError:
             self.log.exception("Unexpected error during yt-dlp update, continuing with current version")
 
     def test(self) -> bool:
         """Test YT-DLP connection."""
         cmd = ["yt-dlp", "--version"]
         try:
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, check=True, timeout=10)
             data = result.stdout.decode()
         except subprocess.CalledProcessError as e:
             self.log.critical("YT-DLP Test Failed: %s", e)
@@ -80,7 +82,6 @@ class YouTubeDLP:
             # Get format list as JSON
             cmd = ["yt-dlp", "-J", "--no-warnings", url]
             result = subprocess.run(cmd, capture_output=True, timeout=30, check=True)
-            import json
             data = json.loads(result.stdout.decode())
 
             formats = data.get("formats", [])
@@ -108,8 +109,7 @@ class YouTubeDLP:
                 """Extract quality score from format - prefer higher bitrate, more channels."""
                 format_id = f.get("format_id", "")
                 # Extract bitrate from format ID (e.g., "audio-stereo-160" -> 160)
-                import re
-                bitrate_match = re.search(r'-(\d+)_', format_id)
+                bitrate_match = re.search(r'-(\d+)$', format_id)
                 bitrate = int(bitrate_match.group(1)) if bitrate_match else 0
                 channels = f.get("audio_channels") or 2
                 return (channels, bitrate)
@@ -122,7 +122,8 @@ class YouTubeDLP:
                              best_video['format_id'], best_audio['format_id'])
                 return format_str
 
-        except Exception as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError,
+                KeyError, ValueError, TypeError) as e:
             self.log.warning("Failed to determine clean audio format for Apple TV: %s", e)
 
         return None
