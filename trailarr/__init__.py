@@ -15,7 +15,7 @@ __description__ = "Automatically download and manage movie trailers for Radarr."
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_FILE = ROOT_DIR / "trailarr.db"
 CONFIG_FILE = ROOT_DIR / "settings.ini"
-LOG_DIR = Path("/config/logs") if Path("/config/logs").exists() else ROOT_DIR / "logs"
+LOG_DIR = Path("/config/logs")
 TEMP_DIR = ROOT_DIR / "temp"
 
 VIDEO_EXTENSIONS = [
