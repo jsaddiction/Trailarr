@@ -12,11 +12,11 @@ from trailarr.app import TrailArr
 class CLIConfig:
     """Trailarr CLI Configuration"""
 
-    tmdb: int = None
+    tmdb: int | None = None
     all: bool = False
     quiet: bool = False
     migrate: bool = False
-    parser: ArgumentParser = None
+    parser: ArgumentParser | None = None
 
 
 def get_arguments() -> CLIConfig:
@@ -25,9 +25,9 @@ def get_arguments() -> CLIConfig:
     parser.add_argument(
         "-v", "--version", action="version", version=__version__, help="Show the name and version number"
     )
-    parser.add_argument("-tmdb", metavar="TMDB id", dest="tmdb", help="TMDB id of the movie", type=int, default=None)
-    parser.add_argument("-all", action="store_true", dest="all", help="Process all movies in Radarr", default=False)
-    parser.add_argument("-quiet", action="store_true", dest="quiet", help="Suppress console output", default=False)
+    parser.add_argument("-t", "--tmdb", metavar="ID", dest="tmdb", help="Process a specific movie by TMDB ID", type=int, default=None)
+    parser.add_argument("-a", "--all", action="store_true", dest="all", help="Process all movies in Radarr", default=False)
+    parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="Suppress console output", default=False)
     parser.add_argument("--migrate", action="store_true", dest="migrate", help="Run pending data migrations", default=False)
 
     cfg = parser.parse_args()
@@ -35,11 +35,16 @@ def get_arguments() -> CLIConfig:
 
 
 def config_logging(app: TrailArr, quiet: bool = False):
-    """Configure logging for console mode."""
-    console_level = 100 if quiet else app.cfg.log_level.upper()
+    """Configure logging for console mode.
+
+    File handler always uses the configured log level.
+    Console handler uses the configured level, or is suppressed with --quiet.
+    """
+    configured_level = app.cfg.log_level.upper()
+    console_level = 100 if quiet else configured_level
     for handler in logging.getLogger().handlers:
         if handler.name == "file":
-            handler.setLevel(100)
+            handler.setLevel(configured_level)
         elif handler.name == "console":
             handler.setLevel(console_level)
 
@@ -49,7 +54,7 @@ def main():
     args = get_arguments()
 
     app = TrailArr()  # Migrations run at end of __init__
-    log = logging.getLogger("Trailarr.CLI")
+    log = logging.getLogger("TrailArr.CLI")
 
     config_logging(app, args.quiet)
 
@@ -70,7 +75,7 @@ def main():
                 return
             app.process_movie(movie)
         else:
-            log.warning("You must specify a TMDB id or use the -all flag.")
+            log.warning("You must specify --tmdb ID or --all (not both).")
             args.parser.print_help()
             return
     except KeyboardInterrupt:
