@@ -153,7 +153,7 @@ def _migration_009_convert_to_partial_hash(conn: sqlite3.Connection, radarr_api=
     import time
     from pathlib import Path
 
-    VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".webm"}
+    from trailarr import VIDEO_EXTENSIONS
 
     def calc_full_hash(file: Path) -> str | None:
         """Calculate full MD5 hash (slow, for finding DB records)."""

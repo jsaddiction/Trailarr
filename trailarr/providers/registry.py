@@ -9,7 +9,7 @@ from trailarr.models.download import TMDBVideo
 class ProviderRegistry:
     """Queries all registered providers and combines deduplicated results."""
 
-    def __init__(self, state_manager=None, run_states: dict = None) -> None:
+    def __init__(self, state_manager=None, run_states: dict | None = None) -> None:
         self.log = logging.getLogger("TrailArr.Providers")
         self._providers: list[TrailerProvider] = []
         self.state_manager = state_manager

@@ -71,6 +71,9 @@ class TrailArr:
         from trailarr.db.migrations import run_migrations
         run_migrations(self.db.conn, radarr_api=self.radarr, ffmpeg_api=self.ffmpeg)
 
+        # Clean stale temp files from any previous interrupted runs
+        self._cleanup_temp_folder()
+
     @property
     def has_write_permission(self) -> bool:
         """Check if the temp folder has write permission."""
@@ -85,7 +88,7 @@ class TrailArr:
         self.log.info("Test Success. Write Permission to %s", TEMP_DIR)
         return True
 
-    def exit(self, error: str = None) -> None:
+    def exit(self, error: str | None = None) -> None:
         """Exit the program with an error message."""
         self.db.close()
         self.providers.close()
@@ -140,6 +143,8 @@ class TrailArr:
 
     def _cleanup_temp_folder(self) -> None:
         """Cleanup the temp folder."""
+        if not TEMP_DIR.is_dir():
+            return
         self.log.debug("Cleaning up Temp Folder")
         for file in TEMP_DIR.iterdir():
             if not file.is_file():

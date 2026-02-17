@@ -16,21 +16,22 @@ class KodiApi:
     RETRIES = 3
     TIMEOUT = 5
     HEADERS = {"Content-Type": "application/json", "Accept": "plain/text"}
+    NOTIFICATION_ICON = "https://raw.githubusercontent.com/jsaddiction/Trailarr/main/img/trailarr.png"
 
     def __init__(
         self,
         name: str,
         ip: str,
         port: int = 8080,
-        user: str = None,
-        password: str = None,
-        path_maps: dict = None,
+        user: str | None = None,
+        password: str | None = None,
+        path_maps: dict | None = None,
     ) -> None:
         self.log = logging.getLogger(f"TrailArr.Kodi-{name}")
         self.base_url = f"http://{ip}:{port}/jsonrpc"
         self.name = name
         self.path_maps: dict[str, str] = path_maps or {}
-        self._platform: Platform = None
+        self._platform: Platform | None = None
 
         self.session = requests.Session()
         if user and password:
@@ -128,9 +129,6 @@ class KodiApi:
         """If this host uses posix file naming conventions."""
         return self.platform not in [Platform.WINDOWS, Platform.UNKNOWN]
 
-    def __del__(self) -> None:
-        self.close_session()
-
     # --------------- Helper Methods -----------------
     def _map_path_to_kodi(self, path: str) -> Path:
         """Map path from Radarr to Kodi path using path_maps."""
@@ -179,7 +177,7 @@ class KodiApi:
             self.log.warning("Failed to parse movie details. Error: %s", e)
             return None
 
-    def _req(self, method: str, params: dict = None, timeout: int = None) -> KodiResponse | None:
+    def _req(self, method: str, params: dict | None = None, timeout: int | None = None) -> KodiResponse | None:
         """Send request to this Kodi Host."""
         req_params = {"jsonrpc": "2.0", "id": self.req_id, "method": method}
         if params:
@@ -206,7 +204,7 @@ class KodiApi:
         finally:
             self.req_id += 1
 
-        if "error" in response:
+        if response and "error" in response:
             raise KodiAPIError(response.get("error"))
 
         return KodiResponse(
@@ -236,7 +234,7 @@ class KodiApi:
             "title": str(title),
             "message": str(msg),
             "displaytime": int(display_time),
-            "image": "https://github.com/jsaddiction/Sonarr_Kodi/raw/main/img/sonarr.png",
+            "image": self.NOTIFICATION_ICON,
         }
         self.log.info("Sending GUI Notification :: (title='%s', msg='%s'", title, msg)
         try:
@@ -266,11 +264,12 @@ class KodiApi:
             self.log.warning("Failed to get movies from file '%s'. Error: %s", mapped_path, e)
             return None
 
-        if len(resp.result["movies"]) != 1:
-            self.log.warning("Found %s movies for file '%s'. Expected 1.", len(resp.result["movies"]), mapped_path)
+        movies = resp.result.get("movies", []) if resp and resp.result else []
+        if len(movies) != 1:
+            self.log.warning("Found %s movies for file '%s'. Expected 1.", len(movies), mapped_path)
             return None
 
-        return self._parse_movie_details(resp.result["movies"][0])
+        return self._parse_movie_details(movies[0])
 
     def set_trailer_path(self, movie_id: int, trailer_path: str) -> bool:
         """Set the trailer path for a movie."""
@@ -294,4 +293,5 @@ class KodiApi:
             self.log.warning("Failed to get all movies. Error: %s", e)
             return []
 
-        return [self._parse_movie_details(x) for x in resp.result["movies"]]
+        movies = resp.result.get("movies", []) if resp and resp.result else []
+        return [m for m in (self._parse_movie_details(x) for x in movies) if m is not None]

@@ -244,8 +244,8 @@ class AppleTVProvider:
             self.log.debug("Successfully extracted Apple TV tokens")
             return True
 
-        except Exception:
-            self.log.exception("Failed to extract Apple TV tokens")
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+            self.log.exception("Failed to extract Apple TV tokens: %s", e)
             return False
 
     def _get_trailers(self, apple_id: str) -> list[dict]:
@@ -286,7 +286,7 @@ class AppleTVProvider:
             self.run_state.warnings.append(warning_msg)
             return []
         except subprocess.CalledProcessError as e:
-            warning_msg = f"Apple TV page request failed for {apple_id}: HTTP {e.returncode}"
+            warning_msg = f"Apple TV page request failed for {apple_id}: curl exit code {e.returncode}"
             self.log.warning(warning_msg)
             self.run_state.warnings.append(warning_msg)
             return []
@@ -295,8 +295,8 @@ class AppleTVProvider:
             self.log.warning(warning_msg)
             self.run_state.warnings.append(warning_msg)
             return []
-        except Exception as e:
-            warning_msg = f"Unexpected error fetching Apple TV page for {apple_id}: {e}"
+        except OSError as e:
+            warning_msg = f"OS error fetching Apple TV page for {apple_id}: {e}"
             self.log.warning(warning_msg)
             self.run_state.warnings.append(warning_msg)
             return []
@@ -390,9 +390,9 @@ class AppleTVProvider:
             self.log.warning(warning_msg)
             self.run_state.warnings.append(warning_msg)
             return []
-        except Exception:
-            self.log.exception("Unexpected error parsing Apple TV page for %s", apple_id)
-            warning_msg = f"Unexpected error parsing Apple TV page for {apple_id}"
+        except (TypeError, AttributeError) as e:
+            warning_msg = f"Unexpected error parsing Apple TV page for {apple_id}: {e}"
+            self.log.warning(warning_msg)
             self.run_state.warnings.append(warning_msg)
             return []
 
@@ -406,10 +406,12 @@ class AppleTVProvider:
         try:
             resp = self.session.get("https://tv.apple.com/us", timeout=10)
             return resp.status_code == 200
-        except Exception:
-            self.log.exception("Apple TV test failed")
+        except requests.RequestException as e:
+            self.log.exception("Apple TV test failed: %s", e)
             return False
 
     def close(self) -> None:
         """Close HTTP session."""
-        self.session.close()
+        if self.session is not None:
+            self.session.close()
+            self.session = None

@@ -46,7 +46,6 @@ INDICES = [
 # Retry parameters
 BASE_TTL_DAYS = 10
 JITTER_DAYS = 3
-MAX_RETRIES = 5
 
 # Provider query cache parameters
 QUERY_CACHE_DAYS = 7  # Don't re-query providers for same movie within ~7 days
@@ -59,6 +58,7 @@ class DB:
     def __init__(self, db_file: Path) -> None:
         self.log = logging.getLogger("TrailArr.DB")
         self.conn = sqlite3.connect(db_file)
+        self.conn.row_factory = sqlite3.Row
 
         # Ensure tables exist with indices
         with self.conn:
@@ -69,41 +69,43 @@ class DB:
 
         # Migrations will be run after app is fully initialized
 
-    def __del__(self) -> None:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
     def close(self) -> None:
         """Close the database connection."""
-        if self.conn:
+        if self.conn is not None:
             self.conn.close()
             self.conn = None
 
-    def _parse_row(self, row: tuple) -> Download:
+    def _parse_row(self, row: sqlite3.Row) -> Download:
         """Parse row into Download object."""
         return Download(
             tmdb=TMDBVideo(
-                tmdb_id=row[1],
-                url=row[2],
-                iso_639_1=row[3],
-                iso_3166_1=row[4],
-                name=row[5],
-                type=row[6],
-                official=bool(row[7]),
+                tmdb_id=row["tmdb_id"],
+                url=row["url"],
+                iso_639_1=row["iso_639_1"],
+                iso_3166_1=row["iso_3166_1"],
+                name=row["name"],
+                type=row["type"],
+                official=bool(row["official"]),
             ),
             file=FileDetails(
-                broken=bool(row[8]),
-                hash=row[9],
-                height=row[10],
-                width=row[11],
-                duration=row[12],
-                frames=row[13],
-                bitrate=row[14],
-                codec_name=row[15],
+                broken=bool(row["broken"]),
+                hash=row["hash"],
+                height=row["height"],
+                width=row["width"],
+                duration=row["duration"],
+                frames=row["frames"],
+                bitrate=row["bitrate"],
+                codec_name=row["codec_name"],
             ),
-            # forced was column 16 (now ignored), retry columns shifted
-            retry_count=row[17] if len(row) > 17 else 0,
-            last_attempted=row[18] if len(row) > 18 else None,
-            created_at=row[19] if len(row) > 19 else None,
+            retry_count=row["retry_count"] if "retry_count" in row.keys() else 0,
+            last_attempted=row["last_attempted"] if "last_attempted" in row.keys() else None,
+            created_at=row["created_at"] if "created_at" in row.keys() else None,
         )
 
     def test(self) -> bool:
@@ -155,8 +157,6 @@ class DB:
         """Check if a broken download is eligible for retry."""
         if not download.file.broken:
             return False
-        if download.retry_count >= MAX_RETRIES:
-            return False
         if download.last_attempted is None:
             return True  # Legacy data with no timestamp, retry immediately
 
@@ -196,10 +196,9 @@ class DB:
             if last_queried.tzinfo is None:
                 last_queried = last_queried.replace(tzinfo=timezone.utc)
 
-            # Calculate TTL with jitter (same per movie+provider due to consistent seed)
-            random.seed(f"{tmdb_id}:{provider_name}")
-            jitter = random.uniform(-QUERY_JITTER_DAYS, QUERY_JITTER_DAYS)
-            random.seed()  # Reset seed
+            # Calculate TTL with jitter (deterministic per movie+provider)
+            rng = random.Random(f"{tmdb_id}:{provider_name}")
+            jitter = rng.uniform(-QUERY_JITTER_DAYS, QUERY_JITTER_DAYS)
             ttl = timedelta(days=QUERY_CACHE_DAYS + jitter)
 
             return datetime.now(timezone.utc) >= last_queried + ttl

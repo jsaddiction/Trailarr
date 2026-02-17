@@ -6,7 +6,7 @@ from configparser import ConfigParser
 
 from trailarr.config.models import Config
 
-log = logging.getLogger("Trailarr.Config")
+log = logging.getLogger("TrailArr.Config")
 
 
 def get_config(config_path: Path) -> Config:
@@ -37,13 +37,22 @@ def get_config(config_path: Path) -> Config:
     config.log_level = parser["LOGS"].get("log_level", config.log_level)
 
     if "TRAILERS" in parser.sections():
-        config.max_resolution = parser["TRAILERS"].getint("max_resolution", config.max_resolution)
+        try:
+            config.max_resolution = parser["TRAILERS"].getint("max_resolution", config.max_resolution)
+        except ValueError:
+            log.warning("Invalid max_resolution in config, using default: %d", config.max_resolution)
 
     config.kodi_name = parser["KODI"].get("kodi_name", config.kodi_name)
     config.kodi_ip = parser["KODI"].get("kodi_ip", config.kodi_ip)
-    config.kodi_port = parser["KODI"].getint("kodi_port", config.kodi_port)
+    try:
+        config.kodi_port = parser["KODI"].getint("kodi_port", config.kodi_port)
+    except ValueError:
+        log.warning("Invalid kodi_port in config, using default: %d", config.kodi_port)
     config.kodi_user = parser["KODI"].get("kodi_user", config.kodi_user)
     config.kodi_pass = parser["KODI"].get("kodi_pass", config.kodi_pass)
-    config.kodi_notify = parser["KODI"].getboolean("kodi_notify", config.kodi_notify)
+    try:
+        config.kodi_notify = parser["KODI"].getboolean("kodi_notify", config.kodi_notify)
+    except ValueError:
+        log.warning("Invalid kodi_notify in config, using default: %s", config.kodi_notify)
 
     return config

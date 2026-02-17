@@ -12,7 +12,7 @@ from trailarr.models.movie import Movie
 class RadarrApi:
     """Radarr API interface."""
 
-    def __init__(self, api_key: str = None) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         self.log = logging.getLogger("TrailArr.Radarr")
         self.api_key = api_key
         self.base_url = None
@@ -37,10 +37,10 @@ class RadarrApi:
         self.base_url = f"http://127.0.0.1:{port}{url_base}/api/v3/"
         self.api_key = root.findtext("ApiKey")
 
-    def _get(self, endpoint: str, params: dict = None) -> dict | list:
+    def _get(self, endpoint: str, params: dict | None = None) -> dict | list | None:
         if not self.base_url or not self.api_key:
             self.log.error("Radarr is not configured. Cannot access %s.", endpoint)
-            return {}
+            return None
 
         headers = {
             "Content-Type": "application/json",
@@ -55,7 +55,7 @@ class RadarrApi:
             return resp.json()
         except requests.RequestException as e:
             self.log.error("Error accessing %s. Error: %s", endpoint, e)
-            return {}
+            return None
 
     @staticmethod
     def _parse_movie_data(movie_data: dict) -> Movie:
@@ -89,10 +89,3 @@ class RadarrApi:
         if not isinstance(data, list) or len(data) != 1:
             return None
         return self._parse_movie_data(data[0])
-
-    def get_movie_by_path(self, movie_path: str) -> Movie | None:
-        """Get movie by path."""
-        for movie in self.get_downloaded_movies():
-            if movie.file_path == movie_path:
-                return movie
-        return None

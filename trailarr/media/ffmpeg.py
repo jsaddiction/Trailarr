@@ -113,7 +113,7 @@ class FfmpegAPI:
 
         return hashlib.md5(first + middle + last).hexdigest()
 
-    def _parse_video_details(self, video_details: dict, file_hash: str = None) -> FileDetails | None:
+    def _parse_video_details(self, video_details: dict, file_hash: str | None = None) -> FileDetails | None:
         """Parse ffprobe video details."""
         if "format" not in video_details:
             return None
@@ -156,7 +156,7 @@ class FfmpegAPI:
         self.log.info("FFMpeg Version: %s", version_str)
         return True
 
-    def get_video_details(self, path: Path, file_hash: str = None) -> FileDetails | None:
+    def get_video_details(self, path: Path, file_hash: str | None = None) -> FileDetails | None:
         """Get video details."""
         self.log.debug("Getting video details for: %s", path)
         cmd = ["ffprobe", "-v", "fatal", "-print_format", "json", "-show_format", "-show_streams", "-show_error", str(path)]
@@ -165,6 +165,8 @@ class FfmpegAPI:
             data = json.loads(result.stdout.decode())
         except subprocess.CalledProcessError as e:
             raise FfmpegError(f"Failed to get video details: Error: {e}") from e
+        except FileNotFoundError as e:
+            raise FfmpegError(f"ffprobe not found: {e}") from e
         except (json.JSONDecodeError, subprocess.TimeoutExpired) as e:
             raise FfmpegError(f"Failed to parse video details: Error: {e}") from e
 
@@ -184,5 +186,7 @@ class FfmpegAPI:
             return float(result.stdout)
         except subprocess.CalledProcessError as e:
             raise FfmpegError(f"Failed to get duration: Error: {e}") from e
+        except FileNotFoundError as e:
+            raise FfmpegError(f"ffprobe not found: {e}") from e
         except (ValueError, subprocess.TimeoutExpired) as e:
             raise FfmpegError(f"Failed to get duration: Error: {e}") from e

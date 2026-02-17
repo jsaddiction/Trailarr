@@ -138,10 +138,6 @@ class ImdbScraper:
 
         self.log.info("Found %d trailer URLs on IMDb for %s", len(trailers), imdb_id)
 
-        # Track successful query
-        if self.run_state:
-            self.run_state.success_count += 1
-
         return trailers
 
     def test(self) -> bool:
@@ -154,6 +150,6 @@ class ImdbScraper:
 
     def close(self) -> None:
         """Close the session."""
-        if self.session:
+        if self.session is not None:
             self.session.close()
             self.session = None

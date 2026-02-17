@@ -36,7 +36,7 @@ class TmdbApi:
     def name(self) -> str:
         return "TMDB"
 
-    def _get(self, endpoint: str, timeout: int = None, params: dict = None) -> dict:
+    def _get(self, endpoint: str, timeout: int | None = None, params: dict | None = None) -> dict:
         tries_remaining = self.RETRIES
         time_out = timeout if timeout else self.TIMEOUT
         url = f"{BASE_URL}{endpoint}"
@@ -140,12 +140,9 @@ class TmdbApi:
 
     def close(self) -> None:
         """Close the session."""
-        if self.session:
+        if self.session is not None:
             self.session.close()
             self.session = None
-
-    def __del__(self) -> None:
-        self.close()
 
     def get_movie(self, movie_id: int) -> dict:
         """

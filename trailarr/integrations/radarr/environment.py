@@ -1,9 +1,27 @@
 """Radarr environment variable parser."""
 
+import types
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import get_args, get_origin, Any
+from typing import get_args, get_origin, Any, Union
 from os import environ
+
+
+def _base_type(annotation) -> type | None:
+    """Extract the base type from a type annotation, handling unions like 'int | None'.
+
+    Returns the first non-NoneType argument from union types, or the annotation itself
+    if it's a plain type.
+    """
+    origin = get_origin(annotation)
+    if origin is Union or origin is types.UnionType:
+        for arg in get_args(annotation):
+            if arg is not type(None):
+                return arg
+        return None
+    if isinstance(annotation, type):
+        return annotation
+    return None
 
 
 class Events(Enum):
@@ -75,13 +93,17 @@ class RadarrEnvironment:
             if not value:
                 continue
 
-            if issubclass(attr.type, Events):
+            base = _base_type(attr.type)
+            if base is None:
+                continue
+
+            if issubclass(base, Events):
                 self.__setattr__(attr.name, Events(value))
-            elif issubclass(attr.type, str):
+            elif issubclass(base, str):
                 self.__setattr__(attr.name, value.strip())
-            elif issubclass(attr.type, bool):
+            elif issubclass(base, bool):
                 self.__setattr__(attr.name, self._parse_bool(value))
-            elif issubclass(attr.type, int):
+            elif issubclass(base, int):
                 self.__setattr__(attr.name, self._parse_int(value))
             elif get_origin(attr.type) == list:
                 list_type = get_args(attr.type)[0]
