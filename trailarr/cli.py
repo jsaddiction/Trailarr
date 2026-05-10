@@ -1,11 +1,16 @@
 """CLI Interface for Trailarr."""
 
 import logging
+import signal
 from dataclasses import dataclass
 from argparse import ArgumentParser
 
 from trailarr import __app_name__, __description__, __version__
 from trailarr.app import TrailArr
+
+
+def _raise_keyboard_interrupt(signum, _frame):
+    raise KeyboardInterrupt(f"Received signal {signal.Signals(signum).name}")
 
 
 @dataclass
@@ -51,6 +56,9 @@ def config_logging(app: TrailArr, quiet: bool = False):
 
 def main():
     """Run the application."""
+    # SIGTERM (docker stop, kill -TERM) follows the same graceful path as SIGINT.
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+
     args = get_arguments()
 
     app = TrailArr()  # Migrations run at end of __init__

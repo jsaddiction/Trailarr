@@ -17,7 +17,6 @@ from trailarr.media import FfmpegAPI, FfmpegError
 from trailarr.integrations.kodi import KodiApi
 from trailarr.providers import ProviderRegistry
 from trailarr.providers.tmdb import TmdbApi
-from trailarr.providers.imdb import ImdbScraper
 from trailarr.providers.appletv import AppleTVProvider
 from trailarr.providers.state import ProviderStateManager, ProviderRunState
 from trailarr.stats import RunStats
@@ -43,7 +42,6 @@ class TrailArr:
         self.run_stats = RunStats()
         self.run_stats.provider_states = {
             'TMDB': ProviderRunState(provider_name='TMDB'),
-            'IMDb': ProviderRunState(provider_name='IMDb'),
             'AppleTV': ProviderRunState(provider_name='AppleTV'),
         }
 
@@ -57,10 +55,6 @@ class TrailArr:
             state_manager=self.state_manager
         )
         self.providers.register(tmdb_api)
-        self.providers.register(ImdbScraper(
-            run_state=self.run_stats.provider_states['IMDb'],
-            state_manager=self.state_manager
-        ))
         self.providers.register(AppleTVProvider(
             tmdb_api=tmdb_api,
             run_state=self.run_stats.provider_states['AppleTV'],
@@ -257,7 +251,7 @@ class TrailArr:
                 downloads.append(dl)
 
         # Update query timestamp ONLY for providers that succeeded
-        # This allows per-provider retry: if IMDb had a 502, only IMDb retries on next run
+        # This allows per-provider retry: if one provider had a 502, only it retries on next run
         if providers_succeeded:
             self.db.update_provider_queries(movie.tmdb_id, providers_succeeded)
             self.log.debug("Updated query timestamps for tmdb_id=%d providers: %s",
@@ -337,8 +331,15 @@ class TrailArr:
         # Download trailer if not in temp directory and a best trailer exists
         if best_trailer.file not in [x.file for x in temp_trailers]:
             new_dl = self._download_trailer(best_trailer.tmdb)
-            if not new_dl:
-                self.log.warning("Failed to download best trailer for %s", movie)
+            if new_dl.file.broken or not new_dl.file.path:
+                # Re-download failed (video unavailable, geo-blocked, etc.) — keep
+                # the existing local trailer, record the failure for retry on a
+                # future run, and bail out before any destructive ops.
+                self.log.warning(
+                    "Re-download failed for %s; keeping existing local trailer",
+                    best_trailer.tmdb.url,
+                )
+                self.db.mark_broken(best_trailer.tmdb.tmdb_id, best_trailer.tmdb.url)
                 return
 
             best_trailer.file = new_dl.file
@@ -367,10 +368,16 @@ class TrailArr:
             self.run_stats.add_trailer()
             self.log.info("Adding new trailer for %s", movie.title)
 
-        self._delete_old_trailer(local_file)
+        # Move the new trailer into place FIRST. Only delete the old local file
+        # after we've confirmed the replacement landed — otherwise a move failure
+        # would orphan the movie with no trailer at all.
         new_path = self._move_trailer(temp_trailer.file, movie)
         if not new_path:
+            self.log.warning("Move failed for %s; keeping existing local trailer", movie.title)
             return
+
+        if local_file and local_file.path != new_path:
+            self._delete_old_trailer(local_file)
 
         self._update_kodi(movie, str(new_path))
 

@@ -147,7 +147,9 @@ class YouTubeDLP:
         if format_selector:
             cmd.extend(["-f", format_selector])
         else:
-            cmd.extend(["-S", f"res:{max_resolution},lang:en"])
+            # Prefer h264 + aac for universal Kodi/player compatibility.
+            # Without this, yt-dlp serves AV1/Opus from YouTube which many devices can't decode.
+            cmd.extend(["-S", f"res:{max_resolution},vcodec:h264,acodec:aac,lang:en"])
 
         cmd.extend([
             "--remux-video", "mp4",
@@ -157,12 +159,22 @@ class YouTubeDLP:
             url,
         ])
 
+        # Use Popen so we can kill yt-dlp explicitly on signal/timeout. subprocess.run
+        # leaves the child running when KeyboardInterrupt fires during wait().
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, timeout=600)
-            path_str = result.stdout.decode()
-        except subprocess.CalledProcessError as e:
-            raise YTDLPError(f"Failed to download {url}") from e
-        except subprocess.TimeoutExpired as e:
+            stdout, _stderr = proc.communicate(timeout=600)
+        except (KeyboardInterrupt, subprocess.TimeoutExpired) as e:
+            proc.kill()
+            try:
+                proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            if isinstance(e, KeyboardInterrupt):
+                raise
             raise YTDLPError(f"Download timed out for {url}") from e
 
-        return Path(path_str.strip()).resolve()
+        if proc.returncode != 0:
+            raise YTDLPError(f"Failed to download {url}")
+
+        return Path(stdout.decode().strip()).resolve()

@@ -135,7 +135,7 @@ class ProviderStateManager:
 
         Args:
             tmdb_id: TMDB movie ID
-            provider_name: Provider name (TMDB, IMDb, AppleTV)
+            provider_name: Provider name (TMDB, AppleTV)
             failure_type: Type of failure (404_not_found, no_match, etc.)
             retry_days: Days until retry (None = permanent, default 60 for 404s)
         """

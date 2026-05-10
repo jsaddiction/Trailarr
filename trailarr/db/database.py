@@ -176,7 +176,7 @@ class DB:
 
         Args:
             tmdb_id: Movie ID
-            provider_name: Provider to check (TMDB, IMDb, AppleTV)
+            provider_name: Provider to check (TMDB, AppleTV)
 
         Returns:
             True if provider should be queried, False if within cache TTL
@@ -213,7 +213,7 @@ class DB:
 
         Args:
             tmdb_id: Movie ID
-            provider_name: Provider that was queried (TMDB, IMDb, AppleTV)
+            provider_name: Provider that was queried (TMDB, AppleTV)
         """
         now = datetime.now(timezone.utc).isoformat()
 
