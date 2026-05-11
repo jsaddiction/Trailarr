@@ -4,7 +4,8 @@ apk add -U --update --no-cache \
 	git \
 	python3 \
 	py3-pip \
-	ffmpeg
+	ffmpeg \
+	deno
 
 echo "************ install python packages ************"
 pip install --upgrade --no-cache-dir -U --break-system-packages \

@@ -151,6 +151,17 @@ class YouTubeDLP:
             # Without this, yt-dlp serves AV1/Opus from YouTube which many devices can't decode.
             cmd.extend(["-S", f"res:{max_resolution},vcodec:h264,acodec:aac,lang:en"])
 
+        # Fall back across YouTube player clients. The default client (android_vr)
+        # reports "video unavailable" for some trailers that the older 'android'
+        # client can fetch (no JS-runtime signature decryption needed).
+        cmd.extend(["--extractor-args", "youtube:player_client=default,android,web,ios"])
+
+        # Enable the EJS (extracted-JS) challenge solver. Together with the deno
+        # JS runtime installed by the installer, this unlocks full-resolution
+        # formats (e.g. 1080p) that YouTube gates behind n-challenge decryption.
+        # yt-dlp caches the solver after the first fetch.
+        cmd.extend(["--remote-components", "ejs:github"])
+
         cmd.extend([
             "--remux-video", "mp4",
             "-O", "after_move:filepath",
