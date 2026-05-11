@@ -13,6 +13,7 @@ class RunStats:
     movies_processed: int = 0
     trailers_added: int = 0
     trailers_upgraded: int = 0
+    movies_without_trailers: list[tuple[int, str]] = field(default_factory=list)
     provider_states: dict[str, ProviderRunState] = field(default_factory=dict)
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -23,6 +24,10 @@ class RunStats:
     def upgrade_trailer(self) -> None:
         """Increment trailers upgraded counter."""
         self.trailers_upgraded += 1
+
+    def add_movie_without_trailer(self, tmdb_id: int, title: str) -> None:
+        """Record a movie that has no trailer locally or online."""
+        self.movies_without_trailers.append((tmdb_id, title))
 
     def total_transient_errors(self) -> int:
         """Get total count of transient errors across all providers."""

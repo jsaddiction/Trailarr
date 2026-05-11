@@ -53,6 +53,17 @@ def generate_summary_report(stats: RunStats, state_manager: ProviderStateManager
         lines.append("")
         lines.append(f"Note: {total_errors} transient error(s) - affected movies will retry on next run")
 
+    # Movies with no trailer anywhere (no local file, no usable online source).
+    # One bare TMDB URL in the header is enough — most mail clients auto-linkify
+    # it, and keeping the link count constant avoids spam-classifier escalation
+    # as the trailerless list grows.
+    if stats.movies_without_trailers:
+        lines.append("")
+        lines.append(f"Movies Without Trailers ({len(stats.movies_without_trailers)}):")
+        lines.append("Add some content for these movies at https://www.themoviedb.org/")
+        for _tmdb_id, title in sorted(stats.movies_without_trailers, key=lambda x: x[1]):
+            lines.append(f"  - {title}")
+
     lines.append("=" * 60)
 
     return "\n".join(lines)

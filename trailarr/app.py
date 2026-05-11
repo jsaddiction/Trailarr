@@ -316,6 +316,8 @@ class TrailArr:
 
         if not best_trailer:
             self.log.warning("No trailers found for %s", movie)
+            if not local_file:
+                self.run_stats.add_movie_without_trailer(movie.tmdb_id, str(movie))
             return
 
         self.log.debug("Best Trailer: %s", best_trailer.tmdb.name)
