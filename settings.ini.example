@@ -13,6 +13,14 @@ log_level: INFO
 # Set to 2160 for 4K trailers (larger file sizes)
 max_resolution: 1080
 
+[YT_DLP]
+# Optional URL of a bgutil-ytdlp-pot-provider HTTP service used to mint
+# YouTube Proof-of-Origin tokens. If set and reachable at startup,
+# trailarr passes the appropriate yt-dlp extractor-args so trailer
+# downloads survive YouTube's bot-detection. Leave blank to disable.
+# See: https://github.com/Brainicism/bgutil-ytdlp-pot-provider
+pot_provider_url:
+
 [KODI]
 kodi_name: 
 kodi_ip: 127.0.0.1

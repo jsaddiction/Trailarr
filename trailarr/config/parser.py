@@ -42,6 +42,9 @@ def get_config(config_path: Path) -> Config:
         except ValueError:
             log.warning("Invalid max_resolution in config, using default: %d", config.max_resolution)
 
+    if "YT_DLP" in parser.sections():
+        config.pot_provider_url = parser["YT_DLP"].get("pot_provider_url", config.pot_provider_url).strip()
+
     config.kodi_name = parser["KODI"].get("kodi_name", config.kodi_name)
     config.kodi_ip = parser["KODI"].get("kodi_ip", config.kodi_ip)
     try:

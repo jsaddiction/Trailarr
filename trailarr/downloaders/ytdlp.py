@@ -7,6 +7,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -14,10 +16,17 @@ class YTDLPError(Exception):
     """Base YT-DLP Exception"""
 
 
+# Configuration key for the bgutil-ytdlp-pot-provider HTTP plugin. yt-dlp
+# accepts these as `--extractor-args` and routes them to the matching plugin.
+# Verified against https://github.com/Brainicism/bgutil-ytdlp-pot-provider .
+POT_EXTRACTOR_KEY = "youtubepot-bgutilhttp"
+POT_PROBE_TIMEOUT_SECS = 2
+
+
 class YouTubeDLP:
     """YT-DLP Downloader CLI Interface."""
 
-    def __init__(self, temp_directory: Path):
+    def __init__(self, temp_directory: Path, pot_provider_url: str | None = None):
         self.log = logging.getLogger("TrailArr.YT-DLP")
         self.temp_directory = temp_directory
         # Per-instance HOME override for pip --user / yt-dlp invocations. When
@@ -27,6 +36,11 @@ class YouTubeDLP:
         # fallback so self-update and runtime invocations stay in sync.
         self._home: str | None = self._resolve_writable_home()
         self.upgrade()
+        # One-shot reachability probe for the optional PO token provider.
+        # Result decides whether subsequent yt-dlp calls get the bgutil
+        # extractor-args. Provider downtime mid-run degrades to today's
+        # bot-detection failure mode — not catastrophic, self-heals next run.
+        self._pot_provider_url: str | None = self._probe_pot_provider(pot_provider_url)
 
     def _resolve_writable_home(self) -> str | None:
         """Find a HOME the current user can write to.
@@ -55,6 +69,37 @@ class YouTubeDLP:
             except OSError:
                 continue
         return None
+
+    def _probe_pot_provider(self, url: str | None) -> str | None:
+        """One-shot reachability check for the bgutil PO token provider.
+
+        Returns the URL if a TCP/HTTP connection succeeds (any response code
+        — even 404 — proves the server is listening), otherwise None. Treated
+        as informational, not error: opting out is a valid configuration.
+        """
+        if not url:
+            return None
+        try:
+            with urllib.request.urlopen(url, timeout=POT_PROBE_TIMEOUT_SECS):
+                pass
+        except urllib.error.HTTPError:
+            # Server returned a non-2xx — that's fine, it's alive.
+            self.log.info("PO token provider reachable at %s", url)
+            return url
+        except (urllib.error.URLError, OSError) as e:
+            self.log.info(
+                "PO token provider %s not reachable; continuing without (%s)",
+                url, e,
+            )
+            return None
+        self.log.info("PO token provider reachable at %s", url)
+        return url
+
+    def _pot_extractor_args(self) -> list[str]:
+        """Return the yt-dlp arg pair for the PO token provider, or []."""
+        if not self._pot_provider_url:
+            return []
+        return ["--extractor-args", f"{POT_EXTRACTOR_KEY}:base_url={self._pot_provider_url}"]
 
     def _subprocess_env(self) -> dict:
         """Env for pip/yt-dlp subprocess calls.
@@ -170,7 +215,7 @@ class YouTubeDLP:
         """
         try:
             # Get format list as JSON
-            cmd = ["yt-dlp", "-J", "--no-warnings", url]
+            cmd = ["yt-dlp", "-J", "--no-warnings", *self._pot_extractor_args(), url]
             result = subprocess.run(
                 cmd, capture_output=True, timeout=30, check=True,
                 env=self._subprocess_env(),
@@ -248,6 +293,10 @@ class YouTubeDLP:
         # reports "video unavailable" for some trailers that the older 'android'
         # client can fetch (no JS-runtime signature decryption needed).
         cmd.extend(["--extractor-args", "youtube:player_client=default,android,web,ios"])
+
+        # PO token provider (bgutil-ytdlp-pot-provider) — bypasses YouTube's
+        # bot-detection gating when configured and reachable. No-op otherwise.
+        cmd.extend(self._pot_extractor_args())
 
         # Enable the EJS (extracted-JS) challenge solver. Together with the deno
         # JS runtime installed by the installer, this unlocks full-resolution

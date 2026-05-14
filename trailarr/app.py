@@ -32,7 +32,7 @@ class TrailArr:
         self.log = logging.getLogger("TrailArr")
         self.env = RadarrEnvironment()
         self.db = DB(DB_FILE)
-        self.ytdlp = YouTubeDLP(TEMP_DIR)
+        self.ytdlp = YouTubeDLP(TEMP_DIR, pot_provider_url=self.cfg.pot_provider_url)
         self.ffmpeg = FfmpegAPI()
         self.radarr = RadarrApi()
         self.kodi = KodiApi(self.cfg.kodi_name, self.cfg.kodi_ip, self.cfg.kodi_port, self.cfg.kodi_user, self.cfg.kodi_pass)
