@@ -26,7 +26,11 @@ fi
 
 echo "************ Install Script Dependencies ************"
 pip install --upgrade pip --no-cache-dir --break-system-packages
-pip install -r /config/scripts/Trailarr/requirements.txt --no-cache-dir --break-system-packages
+# -U upgrades existing packages (otherwise pip leaves them at the installed
+# version even if requirements.txt is unpinned). The runtime self-update in
+# downloaders/ytdlp.py handles per-run yt-dlp bumps; this covers fresh
+# installs and the "restart the container" escape hatch.
+pip install -U -r /config/scripts/Trailarr/requirements.txt --no-cache-dir --break-system-packages
 
 echo "************ Set Permissions ************"
 chmod 777 -R /config/scripts/Trailarr
