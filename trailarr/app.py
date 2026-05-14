@@ -83,16 +83,37 @@ class TrailArr:
         return True
 
     def exit(self, error: str | None = None) -> None:
-        """Exit the program with an error message."""
-        self.db.close()
-        self.providers.close()
-        self._cleanup_temp_folder()
+        """Log the outcome and terminate the process.
+
+        Resource teardown happens in shutdown(); the outer entrypoint calls it
+        from its finally block AFTER the summary report has been generated,
+        because the report queries provider state from the DB.
+        """
         if error:
             self.log.critical("Exited with Error: %s", error)
             sys.exit(1)
 
         self.log.info("Completed Successfully")
         sys.exit(0)
+
+    def shutdown(self) -> None:
+        """Release resources held by this app instance.
+
+        Safe to call multiple times. Intended to be called from the entrypoint's
+        finally block, after the summary report has been generated.
+        """
+        try:
+            self.providers.close()
+        except Exception:
+            self.log.exception("Error closing providers")
+        try:
+            self.db.close()
+        except Exception:
+            self.log.exception("Error closing database")
+        try:
+            self._cleanup_temp_folder()
+        except Exception:
+            self.log.exception("Error cleaning temp folder")
 
     def test(self):
         """Run tests for TrailArr."""
