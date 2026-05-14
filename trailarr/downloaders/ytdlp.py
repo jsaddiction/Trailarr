@@ -2,9 +2,11 @@
 
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -18,25 +20,110 @@ class YouTubeDLP:
     def __init__(self, temp_directory: Path):
         self.log = logging.getLogger("TrailArr.YT-DLP")
         self.temp_directory = temp_directory
+        # Per-instance HOME override for pip --user / yt-dlp invocations. When
+        # the inherited HOME points at a directory the current user can't write
+        # (common in LinuxServer.io images, where services run as UID 998 but
+        # HOME=/root is inherited from s6 init), we relocate to a writable
+        # fallback so self-update and runtime invocations stay in sync.
+        self._home: str | None = self._resolve_writable_home()
         self.upgrade()
 
+    def _resolve_writable_home(self) -> str | None:
+        """Find a HOME the current user can write to.
+
+        Returns None if no candidate is writable — caller should treat that as
+        "self-update unavailable, continue with whatever yt-dlp is on PATH".
+        """
+        candidates = [
+            os.environ.get("HOME"),
+            os.path.expanduser("~"),  # honors passwd entry even if HOME is unset
+            "/config",                # LSI convention for the service user's home
+            tempfile.gettempdir(),
+        ]
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                probe = Path(candidate) / ".local"
+                probe.mkdir(parents=True, exist_ok=True)
+                marker = probe / ".trailarr_write_probe"
+                marker.touch()
+                marker.unlink()
+                return candidate
+            except OSError:
+                continue
+        return None
+
+    def _subprocess_env(self) -> dict:
+        """Env for pip/yt-dlp subprocess calls.
+
+        When _home is set, points HOME at the writable fallback AND prepends
+        $HOME/.local/bin to PATH so an updated yt-dlp entrypoint shadows the
+        system-installed one. Without the PATH tweak, `yt-dlp` would still
+        resolve to /usr/bin/yt-dlp (the system copy) and Python's user-site
+        import would only apply via `python -m yt_dlp`.
+        """
+        env = os.environ.copy()
+        if self._home:
+            env["HOME"] = self._home
+            user_bin = f"{self._home}/.local/bin"
+            env["PATH"] = f"{user_bin}:{env.get('PATH', '')}"
+        return env
+
     def upgrade(self) -> None:
-        """Non-fatal self-update of yt-dlp to latest version via pip."""
-        self.log.info("Checking for yt-dlp updates...")
-        # Use pip to update to latest version (includes nightly fixes)
-        # --break-system-packages is required in Alpine/Docker environments
-        cmd = [sys.executable, "-m", "pip", "install", "-U", "--pre", "--break-system-packages", "yt-dlp"]
+        """Non-fatal self-update of yt-dlp to latest version via pip.
+
+        Installs into the user site under self._home (NOT the system site),
+        because services in LSI containers run as non-root but the system site
+        is root-owned. yt-dlp updates frequently to keep up with YouTube's
+        format changes, so this is run on every invocation.
+        """
+        if self._home is None:
+            self.log.warning(
+                "No writable HOME found for pip --user install; "
+                "skipping yt-dlp self-update. Using system yt-dlp."
+            )
+            return
+
+        self.log.info("Checking for yt-dlp updates (user-site under %s)...", self._home)
+        # --user installs to $HOME/.local; --break-system-packages is required
+        # on Alpine/Debian's externally-managed Python; --pre allows nightly
+        # builds when they ship YouTube extractor fixes.
+        cmd = [
+            sys.executable, "-m", "pip", "install",
+            "--user", "-U", "--pre", "--break-system-packages",
+            "yt-dlp",
+        ]
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=60)
-            stdout = result.stdout.decode().strip()
-            stderr = result.stderr.decode().strip()
+            result = subprocess.run(
+                cmd, capture_output=True, timeout=60, env=self._subprocess_env(),
+            )
+            stdout = result.stdout.decode(errors="replace").strip()
+            stderr = result.stderr.decode(errors="replace").strip()
 
             if result.returncode == 0:
-                # Check if it was already up to date or if it updated
                 if "already satisfied" in stdout.lower() or "already up-to-date" in stdout.lower():
                     self.log.debug("yt-dlp is already up to date")
                 else:
                     self.log.info("yt-dlp updated successfully")
+                return
+
+            # Pattern-match a couple of common, actionable failure modes so the
+            # log line is useful instead of a wall of pip stderr.
+            if "Permission denied" in stderr:
+                self.log.warning(
+                    "yt-dlp self-update blocked by filesystem permissions on %s; "
+                    "continuing with current version. stderr: %s",
+                    self._home, stderr[:300],
+                )
+            elif "Could not find a version" in stderr or "No matching distribution" in stderr:
+                self.log.warning(
+                    "yt-dlp self-update could not reach an index (network/DNS?); "
+                    "continuing with current version. stderr: %s",
+                    stderr[:300],
+                )
             else:
                 self.log.warning(
                     "yt-dlp update returned code %d: %s",
@@ -53,7 +140,10 @@ class YouTubeDLP:
         """Test YT-DLP connection."""
         cmd = ["yt-dlp", "--version"]
         try:
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, check=True, timeout=10)
+            result = subprocess.run(
+                cmd, stdout=subprocess.PIPE, check=True, timeout=10,
+                env=self._subprocess_env(),
+            )
             data = result.stdout.decode()
         except subprocess.CalledProcessError as e:
             self.log.critical("YT-DLP Test Failed: %s", e)
@@ -81,7 +171,10 @@ class YouTubeDLP:
         try:
             # Get format list as JSON
             cmd = ["yt-dlp", "-J", "--no-warnings", url]
-            result = subprocess.run(cmd, capture_output=True, timeout=30, check=True)
+            result = subprocess.run(
+                cmd, capture_output=True, timeout=30, check=True,
+                env=self._subprocess_env(),
+            )
             data = json.loads(result.stdout.decode())
 
             formats = data.get("formats", [])
@@ -172,9 +265,12 @@ class YouTubeDLP:
 
         # Use Popen so we can kill yt-dlp explicitly on signal/timeout. subprocess.run
         # leaves the child running when KeyboardInterrupt fires during wait().
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=self._subprocess_env(),
+        )
         try:
-            stdout, _stderr = proc.communicate(timeout=600)
+            stdout, stderr = proc.communicate(timeout=600)
         except (KeyboardInterrupt, subprocess.TimeoutExpired) as e:
             proc.kill()
             try:
@@ -186,6 +282,11 @@ class YouTubeDLP:
             raise YTDLPError(f"Download timed out for {url}") from e
 
         if proc.returncode != 0:
-            raise YTDLPError(f"Failed to download {url}")
+            # Surface yt-dlp's last line of stderr — its actual failure reason
+            # (signature decryption, geo-block, video unavailable, etc.). The
+            # full stderr can be tens of KB on a verbose failure; truncate.
+            err_text = stderr.decode(errors="replace").strip() if stderr else ""
+            last_line = err_text.splitlines()[-1] if err_text else "(no stderr)"
+            raise YTDLPError(f"Failed to download {url}: {last_line[:500]}")
 
         return Path(stdout.decode().strip()).resolve()
