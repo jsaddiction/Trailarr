@@ -44,6 +44,10 @@ def get_config(config_path: Path) -> Config:
 
     if "YT_DLP" in parser.sections():
         config.pot_provider_url = parser["YT_DLP"].get("pot_provider_url", config.pot_provider_url).strip()
+        try:
+            config.source_block_minutes = parser["YT_DLP"].getint("source_block_minutes", config.source_block_minutes)
+        except ValueError:
+            log.warning("Invalid source_block_minutes in config, using default: %d", config.source_block_minutes)
 
     config.kodi_name = parser["KODI"].get("kodi_name", config.kodi_name)
     config.kodi_ip = parser["KODI"].get("kodi_ip", config.kodi_ip)

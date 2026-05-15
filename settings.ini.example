@@ -21,6 +21,15 @@ max_resolution: 1080
 # See: https://github.com/Brainicism/bgutil-ytdlp-pot-provider
 pot_provider_url:
 
+# When a download source (identified by URL host) returns a session-level
+# rejection — e.g. YouTube's "Sign in to confirm you're not a bot" — skip
+# further downloads from that source for this many minutes. Per-source.
+# The first attempt after the window expires probes whether the block has
+# cleared; success resumes the source, another rejection resets the timer.
+# Default 1440 minutes (24h). Decrease to probe more aggressively, increase
+# to be more conservative when a source has flagged your IP.
+source_block_minutes: 1440
+
 [KODI]
 kodi_name: 
 kodi_ip: 127.0.0.1

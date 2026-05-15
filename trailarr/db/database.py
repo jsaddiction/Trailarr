@@ -310,3 +310,60 @@ class DB:
         sql = "SELECT DISTINCT tmdb_id FROM downloads"
         with self.conn:
             return [row[0] for row in self.conn.execute(sql)]
+
+    # ----- download_source_state -------------------------------------------
+    # A row exists for a source ONLY when it's currently subject to a block.
+    # We treat a block as expired purely by comparing blocked_at_utc against
+    # the configured TTL — no expiry timestamp is stored, so changing the TTL
+    # in settings.ini takes immediate effect on existing rows.
+
+    def is_source_blocked(self, source: str, block_minutes: int) -> bool:
+        """Return True if `source` is within the configured block window."""
+        sql = "SELECT blocked_at_utc FROM download_source_state WHERE source = :source"
+        with self.conn:
+            row = self.conn.execute(sql, {"source": source}).fetchone()
+        if not row or not row[0]:
+            return False
+        try:
+            blocked_at = datetime.fromisoformat(row[0])
+            if blocked_at.tzinfo is None:
+                blocked_at = blocked_at.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return False
+        return datetime.now(timezone.utc) < blocked_at + timedelta(minutes=block_minutes)
+
+    def mark_source_blocked(self, source: str) -> None:
+        """Record (or refresh) a block for `source` starting now."""
+        sql = """INSERT OR REPLACE INTO download_source_state (source, blocked_at_utc)
+                 VALUES (:source, :now)"""
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with self.conn:
+                self.conn.execute(sql, {"source": source, "now": now})
+        except sqlite3.OperationalError as e:
+            self.log.warning("Failed to mark source %s blocked: %s", source, e)
+
+    def get_blocked_sources(self, block_minutes: int) -> list[tuple[str, datetime]]:
+        """Return [(source, blocked_at_utc)] for sources currently blocked."""
+        sql = "SELECT source, blocked_at_utc FROM download_source_state"
+        results: list[tuple[str, datetime]] = []
+        with self.conn:
+            for source, blocked_at_raw in self.conn.execute(sql):
+                if not blocked_at_raw:
+                    continue
+                try:
+                    blocked_at = datetime.fromisoformat(blocked_at_raw)
+                    if blocked_at.tzinfo is None:
+                        blocked_at = blocked_at.replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    continue
+                if datetime.now(timezone.utc) < blocked_at + timedelta(minutes=block_minutes):
+                    results.append((source, blocked_at))
+        return results
+
+    def count_broken_urls_for_source(self, source: str) -> int:
+        """Count broken downloads whose URL contains the given source host."""
+        sql = "SELECT COUNT(*) FROM downloads WHERE broken = 1 AND instr(url, :source) > 0"
+        with self.conn:
+            row = self.conn.execute(sql, {"source": source}).fetchone()
+        return int(row[0]) if row else 0

@@ -1,15 +1,26 @@
 """Summary report generation for trailer processing runs."""
 
+from datetime import timedelta
+
+from trailarr.db import DB
 from trailarr.providers.state import ProviderStateManager
 from trailarr.stats import RunStats
 
 
-def generate_summary_report(stats: RunStats, state_manager: ProviderStateManager) -> str:
+def generate_summary_report(
+    stats: RunStats,
+    state_manager: ProviderStateManager,
+    db: DB | None = None,
+    source_block_minutes: int = 1440,
+) -> str:
     """Generate human-readable summary report.
 
     Args:
         stats: Run statistics
         state_manager: Provider state manager for checking rate limits
+        db: Database (optional; if provided, the report lists currently-blocked
+            download sources and the count of broken URLs each affects)
+        source_block_minutes: TTL used to interpret blocked_at_utc timestamps
 
     Returns:
         Formatted summary report string
@@ -52,6 +63,21 @@ def generate_summary_report(stats: RunStats, state_manager: ProviderStateManager
     if total_errors > 0:
         lines.append("")
         lines.append(f"Note: {total_errors} transient error(s) - affected movies will retry on next run")
+
+    # Currently-blocked download sources. Omitted when nothing is blocked.
+    if db is not None:
+        blocked = db.get_blocked_sources(source_block_minutes)
+        if blocked:
+            lines.append("")
+            lines.append(f"Blocked Download Sources ({len(blocked)}):")
+            for source, blocked_at in blocked:
+                expires_at = blocked_at + timedelta(minutes=source_block_minutes)
+                affected = db.count_broken_urls_for_source(source)
+                lines.append(
+                    f"  {source}: blocked at {blocked_at.strftime('%Y-%m-%d %H:%M UTC')}, "
+                    f"expires {expires_at.strftime('%Y-%m-%d %H:%M UTC')}, "
+                    f"{affected} affected URL(s)"
+                )
 
     # Movies with no trailer anywhere (no local file, no usable online source).
     # One bare TMDB URL in the header is enough — most mail clients auto-linkify

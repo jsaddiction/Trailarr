@@ -44,7 +44,12 @@ if __name__ == "__main__":
         if app is not None:
             try:
                 from trailarr.report import generate_summary_report
-                summary = generate_summary_report(app.run_stats, app.state_manager)
+                summary = generate_summary_report(
+                    app.run_stats,
+                    app.state_manager,
+                    db=app.db,
+                    source_block_minutes=app.cfg.source_block_minutes,
+                )
                 print(summary)
             except Exception:
                 app.log.exception("Failed to generate summary report")

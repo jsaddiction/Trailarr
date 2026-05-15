@@ -265,6 +265,22 @@ def _migration_009_convert_to_partial_hash(conn: sqlite3.Connection, radarr_api=
     log.info("=" * 60)
 
 
+def _migration_010_create_download_source_state(conn: sqlite3.Connection) -> None:
+    """Create download_source_state table for tracking source-wide blocks.
+
+    A row in this table means "this URL host (e.g. www.youtube.com) returned a
+    session-level rejection at blocked_at_utc." Combined with the config
+    source_block_minutes, this lets downloads from a misbehaving source be
+    skipped for a fixed window without marking individual URLs as broken.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS download_source_state (
+            source TEXT PRIMARY KEY,
+            blocked_at_utc TEXT NOT NULL
+        )
+    """)
+
+
 # Register all migrations here, in order
 MIGRATIONS: list[Migration] = [
     (1, "Add retry tracking columns (retry_count, last_attempted, created_at)", _migration_001_add_retry_columns),
@@ -276,6 +292,7 @@ MIGRATIONS: list[Migration] = [
     (7, "Create movie_provider_queries table and migrate data", _migration_007_create_movie_provider_queries),
     (8, "Deprecate last_queried_utc in downloads", _migration_008_deprecate_last_queried),
     (9, "Convert to partial hash algorithm for faster file checks", _migration_009_convert_to_partial_hash),
+    (10, "Create download_source_state table for source-wide blocks", _migration_010_create_download_source_state),
 ]
 
 

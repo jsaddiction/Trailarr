@@ -10,6 +10,7 @@ class Config:
     log_level: str = field(default="INFO")
     max_resolution: int = field(default=1080)
     pot_provider_url: str = field(default="")
+    source_block_minutes: int = field(default=1440)
     kodi_name: str = field(default="")
     kodi_ip: str = field(default="127.0.0.1")
     kodi_port: int = field(default=8080)

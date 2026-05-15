@@ -13,7 +13,36 @@ from pathlib import Path
 
 
 class YTDLPError(Exception):
-    """Base YT-DLP Exception"""
+    """Base YT-DLP Exception. A per-URL failure: the video is bad, geo-blocked,
+    network glitch, etc. The URL itself is the locus of the problem."""
+
+
+class YTDLPSessionBlockedError(YTDLPError):
+    """Session-level rejection from the source (e.g. YouTube's
+    "Sign in to confirm you're not a bot"). Nothing wrong with the URL —
+    the source has revoked our anonymous access. Callers should skip the URL
+    without recording it as broken, and mark the source as blocked so further
+    URLs from the same host are skipped for a window.
+
+    Subclass of YTDLPError so any pre-existing `except YTDLPError` keeps
+    catching it as a safety net even if a new code path forgets the
+    specific handler.
+    """
+
+
+# Stderr substrings that mark a source-wide rejection rather than a per-URL
+# problem. We extend this list as we observe new patterns from Vimeo, AppleTV
+# CDN, etc. Match is plain substring (case-sensitive — yt-dlp's wording is
+# stable enough that this is fine).
+SESSION_FAILURE_PATTERNS = (
+    "Sign in to confirm",
+    "LOGIN_REQUIRED",
+)
+
+
+def _is_session_failure(stderr: str) -> bool:
+    """True iff stderr contains any source-wide-rejection fingerprint."""
+    return any(pat in stderr for pat in SESSION_FAILURE_PATTERNS)
 
 
 # Configuration key for the bgutil-ytdlp-pot-provider HTTP plugin. yt-dlp
@@ -336,6 +365,10 @@ class YouTubeDLP:
             # full stderr can be tens of KB on a verbose failure; truncate.
             err_text = stderr.decode(errors="replace").strip() if stderr else ""
             last_line = err_text.splitlines()[-1] if err_text else "(no stderr)"
+            if _is_session_failure(err_text):
+                raise YTDLPSessionBlockedError(
+                    f"Source rejected request for {url}: {last_line[:500]}"
+                )
             raise YTDLPError(f"Failed to download {url}: {last_line[:500]}")
 
         return Path(stdout.decode().strip()).resolve()

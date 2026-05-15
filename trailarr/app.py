@@ -4,6 +4,7 @@ import sys
 import shutil
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 
 from trailarr import DB_FILE, TEMP_DIR, VIDEO_EXTENSIONS, CONFIG_FILE
 from trailarr.config import get_config
@@ -13,6 +14,7 @@ from trailarr.models.download import Download, TMDBVideo, FileDetails
 from trailarr.db import DB
 from trailarr.integrations.radarr import RadarrApi, RadarrEnvironment, Events
 from trailarr.downloaders import YouTubeDLP, YTDLPError
+from trailarr.downloaders.ytdlp import YTDLPSessionBlockedError
 from trailarr.media import FfmpegAPI, FfmpegError
 from trailarr.integrations.kodi import KodiApi
 from trailarr.providers import ProviderRegistry
@@ -20,6 +22,16 @@ from trailarr.providers.tmdb import TmdbApi
 from trailarr.providers.appletv import AppleTVProvider
 from trailarr.providers.state import ProviderStateManager, ProviderRunState
 from trailarr.stats import RunStats
+
+
+def _url_source(url: str) -> str:
+    """Return the source identifier for a URL — its lowercased host.
+
+    Distinct hostnames (www.youtube.com vs youtu.be) are treated as separate
+    sources by design; if one ends up blocked but not the other, the second
+    will fail naturally on its own URL and add its own row.
+    """
+    return urlparse(url).netloc.lower()
 
 
 class TrailArr:
@@ -213,9 +225,26 @@ class TrailArr:
             return None
 
     def _download_trailer(self, tmdb_data: TMDBVideo) -> Download | None:
-        """Download a trailer into the temp folder."""
+        """Download a trailer into the temp folder.
+
+        Return semantics:
+          - Download with file.broken=False : succeeded
+          - Download with file.broken=True  : per-URL failure (URL is the problem)
+          - None                            : source-wide rejection — the URL was
+                                              not attempted-and-failed, we just
+                                              can't talk to its source right now.
+                                              Caller should skip without recording
+                                              the URL as broken.
+        """
         try:
             trailer_path = self.ytdlp.download(tmdb_data.url, max_resolution=self.cfg.max_resolution)
+        except YTDLPSessionBlockedError as e:
+            # Source-wide: record the source state, but DON'T touch the URL row.
+            # The URL hasn't proven broken; we just can't reach its source.
+            source = _url_source(tmdb_data.url)
+            self.db.mark_source_blocked(source)
+            self.log.info("Source %s blocked, skipping: %s", source, e)
+            return None
         except YTDLPError as e:
             self.log.error("Failed to download %s. Error: %s", tmdb_data.url, e)
             return Download(tmdb=tmdb_data, file=FileDetails(broken=True))
@@ -247,6 +276,14 @@ class TrailArr:
             if not tmdb_trailer.url:
                 continue
 
+            # Source-block gate: if this URL's host is in the current block
+            # window, skip silently — don't probe, don't write the DB. The
+            # window expires automatically per cfg.source_block_minutes.
+            source = _url_source(tmdb_trailer.url)
+            if self.db.is_source_blocked(source, self.cfg.source_block_minutes):
+                self.log.debug("Skipping %s — source %s currently blocked", tmdb_trailer.url, source)
+                continue
+
             existing = self.db.select_by_url(tmdb_trailer.url)
 
             if existing:
@@ -257,6 +294,10 @@ class TrailArr:
                         tmdb_trailer.url, existing.retry_count + 1,
                     )
                     dl = self._download_trailer(tmdb_trailer)
+                    if dl is None:
+                        # Source became blocked mid-flight. Leave the existing
+                        # broken row alone; subsequent runs honor the block.
+                        continue
                     if dl.file.broken:
                         self.db.mark_broken(tmdb_trailer.tmdb_id, tmdb_trailer.url)
                     else:
@@ -267,6 +308,10 @@ class TrailArr:
 
             # New URL, download it
             dl = self._download_trailer(tmdb_trailer)
+            if dl is None:
+                # Source became blocked on this URL — don't insert a row for
+                # an unattempted URL. Next eligible run will try fresh.
+                continue
             self.db.insert_download(dl)
             if not dl.file.broken:
                 downloads.append(dl)
