@@ -392,8 +392,12 @@ class TrailArr:
         if local_file and best_trailer.file.hash == local_file.hash:
             self.log.debug("Best trailer is already in place for %s", movie)
             if local_file.path.stem != f"{movie.file_path.stem}-trailer":
-                self._move_trailer(local_file, movie)
-                self._update_kodi(movie, str(local_file.path))
+                new_path = self._move_trailer(local_file, movie)
+                # Use the post-move path so Kodi's trailer field points at the
+                # file's actual on-disk location after the rename; fall back to
+                # the pre-move path only when _move_trailer returned None (i.e.
+                # the move didn't happen, file still at original path).
+                self._update_kodi(movie, str(new_path) if new_path else str(local_file.path))
             return
 
         # Download trailer if not in temp directory and a best trailer exists
