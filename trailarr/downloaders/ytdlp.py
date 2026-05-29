@@ -30,12 +30,19 @@ class YTDLPSessionBlockedError(YTDLPError):
     """
 
 
-# Stderr substrings that mark a source-wide rejection rather than a per-URL
-# problem. We extend this list as we observe new patterns from Vimeo, AppleTV
-# CDN, etc. Match is plain substring (case-sensitive — yt-dlp's wording is
-# stable enough that this is fine).
+# Stderr substrings that mark a source-wide rejection (the IP/bot wall) rather
+# than a per-URL problem. We extend this list as we observe new patterns from
+# Vimeo, AppleTV CDN, etc. Match is plain substring (case-sensitive — yt-dlp's
+# wording is stable enough that this is fine).
+#
+# IMPORTANT: do NOT broaden "not a bot" back to "Sign in to confirm". YouTube's
+# age-gate error is "Sign in to confirm your age" — a per-URL problem, NOT a
+# source-wide block. Matching the looser "Sign in to confirm" makes a single
+# age-restricted trailer falsely block ALL YouTube downloads for
+# source_block_minutes (24h). "not a bot" matches only the bot wall and also
+# sidesteps yt-dlp's curly apostrophe in "you're".
 SESSION_FAILURE_PATTERNS = (
-    "Sign in to confirm",
+    "not a bot",
     "LOGIN_REQUIRED",
 )
 
