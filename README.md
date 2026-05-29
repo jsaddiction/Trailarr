@@ -67,16 +67,26 @@ To process your existing library:
 ## CLI Usage
 
 ```
-usage: Trailarr [-h] [-v] [-t ID] [-a] [-q] [--migrate]
+usage: Trailarr [-h] [-v] [-t ID] [-a] [-f] [-q] [--migrate]
 
 options:
   -h, --help        Show this help message and exit
   -v, --version     Show version number
-  -t ID, --tmdb ID  Process a specific movie by TMDB ID
+  -t ID, --tmdb ID  Process a specific movie by TMDB ID (always forces)
   -a, --all         Process all movies in Radarr
+  -f, --force       Bypass caches, retry TTLs, and source blocks for this run
   -q, --quiet       Suppress console output
   --migrate         Run pending data migrations
 ```
+
+A manual `--tmdb` run is treated as a deliberate "do this one now," so it
+**always forces**: it bypasses the provider query cache, per-provider rate
+limits and failure backoffs, the broken-URL retry TTL, and the 24h source
+block, then re-discovers and re-attempts the movie. It will **not** replace a
+trailer that is already correctly in place — force fills gaps, it does not
+re-download good files. `--force` applies the same bypass to `--all` for a
+deliberate full refresh. The Radarr-triggered path is never forced, so
+automated imports stay throttled.
 
 **Examples:**
 
@@ -84,8 +94,11 @@ options:
 # Process all movies (great for initial library setup)
 docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --all
 
-# Process a single movie by TMDB ID
+# Process a single movie by TMDB ID (forces past all caches/blocks)
 docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --tmdb 550
+
+# Force a full re-discovery of the whole library (ignores all caches/TTLs)
+docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --all --force
 
 # Quiet mode for cron jobs (logs still written to file)
 docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --all --quiet

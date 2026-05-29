@@ -20,13 +20,16 @@ class ProviderRegistry:
         self._providers.append(provider)
         self.log.info("Registered provider: %s", provider.name)
 
-    def get_all_trailers(self, tmdb_id: int, imdb_id: str | None = None, db=None) -> tuple[list[TMDBVideo], set[str]]:
+    def get_all_trailers(self, tmdb_id: int, imdb_id: str | None = None, db=None, force: bool = False) -> tuple[list[TMDBVideo], set[str]]:
         """Query providers that should be queried for this movie, combine and deduplicate results.
 
         Args:
             tmdb_id: TMDB movie ID
             imdb_id: IMDb ID (optional)
             db: Database instance for checking query TTL
+            force: bypass the throttle gates (rate-limit, per-movie failures,
+                query TTL) for a user-initiated run. A run-level auth_failed is
+                still honored — it's a hard credential failure, not a throttle.
 
         Returns:
             (trailers, providers_succeeded): List of trailers and set of provider names that succeeded
@@ -43,8 +46,10 @@ class ProviderRegistry:
                 self.log.info("Skipping %s - authentication failed earlier", provider.name)
                 continue
 
-            # Check rate limits (DB-persisted)
-            if self.state_manager:
+            # Throttle gates (DB-persisted): rate-limit, per-movie failures, and
+            # query TTL. force bypasses all three — the user is explicitly
+            # overriding our throttling (they may know something we don't).
+            if self.state_manager and not force:
                 is_limited, expires_at = self.state_manager.is_rate_limited(provider.name)
                 if is_limited:
                     self.log.info("Skipping %s - rate limited until %s", provider.name, expires_at)
@@ -57,7 +62,7 @@ class ProviderRegistry:
                     continue
 
             # Check per-provider query TTL (DB-persisted)
-            if db and not db.should_query_provider(tmdb_id, provider.name):
+            if db and not force and not db.should_query_provider(tmdb_id, provider.name):
                 self.log.debug("Skipping %s for tmdb_id=%d - within cache TTL", provider.name, tmdb_id)
                 continue
 

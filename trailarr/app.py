@@ -257,17 +257,19 @@ class TrailArr:
 
         return Download(tmdb=tmdb_data, file=trailer_file)
 
-    def _get_new_trailers(self, movie: Movie) -> list[Download]:
+    def _get_new_trailers(self, movie: Movie, force: bool = False) -> list[Download]:
         """Download trailers not in db and return list of Downloads."""
         self.log.debug("Getting new trailers for %s", movie)
         downloads: list[Download] = []
 
-        # Query providers - registry checks per-provider TTL internally
+        # Query providers - registry checks per-provider TTL/rate-limit/failure
+        # gates internally; force bypasses all of them.
         # Returns trailers and set of providers that succeeded
         all_trailers, providers_succeeded = self.providers.get_all_trailers(
             movie.tmdb_id,
             imdb_id=movie.imdb_id,
-            db=self.db
+            db=self.db,
+            force=force,
         )
 
         # Download and insert new trailers
@@ -280,14 +282,14 @@ class TrailArr:
             # window, skip silently — don't probe, don't write the DB. The
             # window expires automatically per cfg.source_block_minutes.
             source = _url_source(tmdb_trailer.url)
-            if self.db.is_source_blocked(source, self.cfg.source_block_minutes):
+            if not force and self.db.is_source_blocked(source, self.cfg.source_block_minutes):
                 self.log.debug("Skipping %s — source %s currently blocked", tmdb_trailer.url, source)
                 continue
 
             existing = self.db.select_by_url(tmdb_trailer.url)
 
             if existing:
-                if existing.file.broken and self.db.is_retryable(existing):
+                if existing.file.broken and (force or self.db.is_retryable(existing)):
                     # Broken but eligible for retry
                     self.log.info(
                         "Retrying broken download: %s (attempt %d)",
@@ -371,12 +373,19 @@ class TrailArr:
         trailers.sort(key=lambda x: x.selection_score, reverse=True)
         return trailers[0] if trailers else None
 
-    def process_movie(self, movie: Movie):
-        """Process the given movie."""
-        self.log.info("Processing Movie: %s", movie)
+    def process_movie(self, movie: Movie, force: bool = False):
+        """Process the given movie.
+
+        force=True (manual --tmdb / --force) bypasses the discovery and retry
+        gates — provider query TTL, per-movie provider failures, provider
+        rate-limit, the broken-URL retry TTL, and the 24h source block — so a
+        user can re-attempt a movie immediately. It does NOT replace a trailer
+        already in place: force fills gaps, it doesn't re-download good files.
+        """
+        self.log.info("Processing Movie: %s%s", movie, " [force]" if force else "")
         self.run_stats.movies_processed += 1
 
-        temp_trailers = self._get_new_trailers(movie)
+        temp_trailers = self._get_new_trailers(movie, force=force)
         local_file = self._get_local_trailer(movie)
         best_trailer = self._best_trailer(movie.tmdb_id)
 
@@ -453,12 +462,12 @@ class TrailArr:
 
         self._update_kodi(movie, str(new_path))
 
-    def process_all(self):
+    def process_all(self, force: bool = False):
         """Process all movies in Radarr."""
         movies = self.radarr.get_downloaded_movies()
         for movie in movies:
             try:
-                self.process_movie(movie)
+                self.process_movie(movie, force=force)
             except Exception:
                 self.log.exception("Failed to process movie: %s", movie.title)
                 # Continue to next movie instead of crashing
