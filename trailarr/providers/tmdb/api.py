@@ -155,9 +155,20 @@ class TmdbApi:
         return self._get(endpoint=endpoint)
 
     def _get_videos(self, movie_id: int) -> list[TMDBVideo]:
-        """Get list of videos given a tmdb movie id."""
+        """Get list of videos given a tmdb movie id.
+
+        Without include_video_language TMDB returns only English and untagged
+        videos, so a movie whose trailers are tagged in its original language
+        (e.g. a Hindi release) would get nothing. Request the original
+        language as well.
+        """
+        languages = ["en", "null"]
+        original_language = self.get_movie(movie_id).get("original_language")
+        if original_language and original_language not in languages:
+            languages.append(original_language)
+
         endpoint = f"movie/{movie_id}/videos"
-        res = self._get(endpoint=endpoint)
+        res = self._get(endpoint=endpoint, params={"include_video_language": ",".join(languages)})
         videos = []
 
         if not res or "results" not in res:
@@ -174,12 +185,16 @@ class TmdbApi:
         """Get list of trailers given a tmdb movie id.
 
         Filters to only 'Trailer' type (excludes Teaser, Featurette, Clip, etc.)
-        and prioritizes official trailers with "Official" in the name.
+        and prioritizes official trailers with "Official" in the name, English
+        (or untagged) ahead of original-language trailers.
         """
         self.log.debug("Getting trailers for movie: %s", tmdb_id)
 
         # Filter to only trailers (excludes teasers, featurettes, clips, etc.)
         trailers = [video for video in self._get_videos(tmdb_id) if video.type == "Trailer"]
+
+        # English/untagged first; sort is stable so TMDB order is kept otherwise
+        trailers.sort(key=lambda t: t.iso_639_1 not in ("en", None))
 
         # Prioritize trailers with "Official" in the name
         official_named = [t for t in trailers if t.name and 'official' in t.name.lower()]
