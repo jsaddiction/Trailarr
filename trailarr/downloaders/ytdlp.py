@@ -236,6 +236,37 @@ class YouTubeDLP:
         self.log.info("YT-DLP Version: %s", data.strip())
         return True
 
+    def get_info(self, url: str) -> dict:
+        """Fetch video metadata (title, duration, channel) without downloading.
+
+        Raises YTDLPSessionBlockedError on a source-wide rejection and
+        YTDLPError for any other failure (unavailable, private, etc.).
+        """
+        cmd = [
+            "yt-dlp", "-J", "--skip-download", "--no-warnings",
+            "--extractor-args", "youtube:player_client=default,android,web,ios",
+            *self._pot_extractor_args(),
+            "--remote-components", "ejs:github",
+            url,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=60, env=self._subprocess_env())
+        except subprocess.TimeoutExpired as e:
+            raise YTDLPError(f"Timed out reading {url}") from e
+
+        if result.returncode != 0:
+            err_text = result.stderr.decode(errors="replace").strip() if result.stderr else ""
+            last_line = err_text.splitlines()[-1] if err_text else "(no stderr)"
+            if _is_session_failure(err_text):
+                raise YTDLPSessionBlockedError(f"Source rejected request for {url}: {last_line}")
+            raise YTDLPError(f"Failed to read {url}: {last_line}")
+
+        try:
+            data = json.loads(result.stdout.decode())
+        except json.JSONDecodeError as e:
+            raise YTDLPError(f"Unparseable metadata for {url}: {e}") from e
+        return {key: data.get(key) for key in ("title", "duration", "channel")}
+
     def _is_apple_tv_url(self, url: str) -> bool:
         """Check if URL is an Apple TV HLS stream."""
         return "play-edge.itunes.apple.com" in url.lower() or "tv.apple.com" in url.lower()

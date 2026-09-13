@@ -1,10 +1,11 @@
 """Main TrailArr application class."""
 
+import re
 import sys
 import shutil
 import logging
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from trailarr import DB_FILE, TEMP_DIR, VIDEO_EXTENSIONS, CONFIG_FILE
 from trailarr.config import get_config
@@ -32,6 +33,27 @@ def _url_source(url: str) -> str:
     will fail naturally on its own URL and add its own row.
     """
     return urlparse(url).netloc.lower()
+
+
+_YOUTUBE_KEY = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def _youtube_key(value: str) -> str | None:
+    """Extract an 11-char YouTube video key from a bare key or a YouTube URL
+    (watch?v=, youtu.be/, /shorts/, /embed/). Returns None if not recognised."""
+    value = value.strip()
+    if _YOUTUBE_KEY.match(value):
+        return value
+
+    parsed = urlparse(value)
+    host = parsed.netloc.lower()
+    if host.endswith("youtu.be"):
+        candidate = parsed.path.lstrip("/")
+    elif host.endswith("youtube.com"):
+        candidate = parse_qs(parsed.query).get("v", [""])[0] or parsed.path.rstrip("/").split("/")[-1]
+    else:
+        return None
+    return candidate if _YOUTUBE_KEY.match(candidate) else None
 
 
 class TrailArr:
@@ -470,6 +492,60 @@ class TrailArr:
             self._delete_old_trailer(local_file)
 
         self._update_kodi(movie, str(new_path))
+
+    def process_manual(self, movie: Movie, video: str) -> None:
+        """Download a user-chosen YouTube video as the movie's trailer.
+
+        For movies whose provider trailers are all dead or missing. The pick is
+        recorded like any other download, so it is not permanent: if a provider
+        later yields a better-scoring working trailer, a normal run upgrades to
+        it. TMDB's API is read-only, so contributing the video back to TMDB is
+        left to the user via the logged link.
+        """
+        key = _youtube_key(video)
+        if not key:
+            self.log.error("Not a YouTube video key or URL: %s", video)
+            return
+        url = f"https://www.youtube.com/watch?v={key}"
+        self.log.info("Processing Movie: %s [manual %s]", movie, url)
+        self.run_stats.movies_processed += 1
+
+        try:
+            info = self.ytdlp.get_info(url)
+        except YTDLPError as e:
+            self.log.error("Cannot use %s: %s", url, e)
+            return
+        title = info.get("title") or f"Manual trailer {key}"
+        self.log.info("Video: '%s' (%ss) from %s", title, info.get("duration"), info.get("channel"))
+
+        tmdb_video = TMDBVideo(
+            tmdb_id=movie.tmdb_id, iso_639_1="", iso_3166_1="",
+            name=title, type="Trailer", official=False, url=url,
+        )
+        dl = self._download_trailer(tmdb_video)
+        if dl is None or dl.file.broken or not dl.file.path:
+            self.log.error("Manual download failed for %s; existing trailer left in place", url)
+            return
+        self.db.insert_download(dl)
+
+        local_file = self._get_local_trailer(movie)
+        new_path = self._move_trailer(dl.file, movie)
+        if not new_path:
+            self.log.warning("Move failed for %s; keeping existing local trailer", movie.title)
+            return
+
+        if local_file:
+            self.run_stats.upgrade_trailer()
+            if local_file.path != new_path:
+                self._delete_old_trailer(local_file)
+        else:
+            self.run_stats.add_trailer()
+
+        self._update_kodi(movie, str(new_path))
+        self.log.info(
+            "To share with other users, add YouTube key %s at https://www.themoviedb.org/movie/%s/videos",
+            key, movie.tmdb_id,
+        )
 
     def process_all(self, force: bool = False):
         """Process all movies in Radarr."""

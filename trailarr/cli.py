@@ -18,6 +18,7 @@ class CLIConfig:
     """Trailarr CLI Configuration"""
 
     tmdb: int | None = None
+    youtube: str | None = None
     all: bool = False
     force: bool = False
     quiet: bool = False
@@ -32,13 +33,14 @@ def get_arguments() -> CLIConfig:
         "-v", "--version", action="version", version=__version__, help="Show the name and version number"
     )
     parser.add_argument("-t", "--tmdb", metavar="ID", dest="tmdb", help="Process a specific movie by TMDB ID", type=int, default=None)
+    parser.add_argument("-y", "--youtube", metavar="KEY", dest="youtube", help="With --tmdb: use this YouTube video key or URL as the trailer", default=None)
     parser.add_argument("-a", "--all", action="store_true", dest="all", help="Process all movies in Radarr", default=False)
     parser.add_argument("-f", "--force", action="store_true", dest="force", help="Bypass caches, TTLs, and source blocks for this run (always implied by --tmdb)", default=False)
     parser.add_argument("-q", "--quiet", action="store_true", dest="quiet", help="Suppress console output", default=False)
     parser.add_argument("--migrate", action="store_true", dest="migrate", help="Run pending data migrations", default=False)
 
     cfg = parser.parse_args()
-    return CLIConfig(tmdb=cfg.tmdb, all=cfg.all, force=cfg.force, quiet=cfg.quiet, migrate=cfg.migrate, parser=parser)
+    return CLIConfig(tmdb=cfg.tmdb, youtube=cfg.youtube, all=cfg.all, force=cfg.force, quiet=cfg.quiet, migrate=cfg.migrate, parser=parser)
 
 
 def config_logging(app: TrailArr, quiet: bool = False):
@@ -81,6 +83,10 @@ def main():
         # triggered path (app.run(), env-driven) never sets force, so automated
         # imports stay throttled.
         force = args.force or args.tmdb is not None
+        if args.youtube and (args.tmdb is None or args.all):
+            log.warning("--youtube requires --tmdb ID (and not --all).")
+            args.parser.print_help()
+            return
         if args.all and args.tmdb is None:
             app.process_all(force=force)
         elif args.tmdb and not args.all:
@@ -88,7 +94,10 @@ def main():
             if not movie:
                 log.warning("TMDB id %s not found in Radarr.", args.tmdb)
                 return
-            app.process_movie(movie, force=force)
+            if args.youtube:
+                app.process_manual(movie, args.youtube)
+            else:
+                app.process_movie(movie, force=force)
         else:
             log.warning("You must specify --tmdb ID or --all (not both).")
             args.parser.print_help()

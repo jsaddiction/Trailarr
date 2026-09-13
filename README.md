@@ -67,12 +67,14 @@ To process your existing library:
 ## CLI Usage
 
 ```
-usage: Trailarr [-h] [-v] [-t ID] [-a] [-f] [-q] [--migrate]
+usage: Trailarr [-h] [-v] [-t ID] [-y KEY] [-a] [-f] [-q] [--migrate]
 
 options:
   -h, --help        Show this help message and exit
   -v, --version     Show version number
   -t ID, --tmdb ID  Process a specific movie by TMDB ID (always forces)
+  -y KEY, --youtube KEY
+                    With --tmdb: use this YouTube video key or URL as the trailer
   -a, --all         Process all movies in Radarr
   -f, --force       Bypass caches, retry TTLs, and source blocks for this run
   -q, --quiet       Suppress console output
@@ -88,6 +90,14 @@ re-download good files. `--force` applies the same bypass to `--all` for a
 deliberate full refresh. The Radarr-triggered path is never forced, so
 automated imports stay throttled.
 
+`--tmdb ID --youtube KEY` is the manual fallback for a movie whose provider
+trailers are all dead or missing: find a trailer on YouTube yourself and pass
+its key (or URL). Trailarr downloads it through the normal pipeline, puts it in
+place, and updates Kodi. The pick is not pinned — if a provider later returns a
+working trailer that scores higher, a normal run upgrades to it. TMDB's API is
+read-only, so the run logs the movie's TMDB videos page for you to add the key
+there and share it with other users.
+
 **Examples:**
 
 ```bash
@@ -96,6 +106,9 @@ docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --all
 
 # Process a single movie by TMDB ID (forces past all caches/blocks)
 docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --tmdb 550
+
+# Use a hand-picked YouTube video when the movie's provider trailers are dead
+docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --tmdb 949640 --youtube 80oxrgqa4pc
 
 # Force a full re-discovery of the whole library (ignores all caches/TTLs)
 docker exec radarr /config/scripts/Trailarr/trailarr_cli.py --all --force
