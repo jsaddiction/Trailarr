@@ -261,6 +261,10 @@ class TrailArr:
         """Download trailers not in db and return list of Downloads."""
         self.log.debug("Getting new trailers for %s", movie)
         downloads: list[Download] = []
+        # Set when any URL is skipped because its source is blocked. Such URLs
+        # were never attempted, so the provider query must not be cached —
+        # otherwise the movie is locked out for the full query TTL (~7 days).
+        skipped_blocked = False
 
         # Query providers - registry checks per-provider TTL/rate-limit/failure
         # gates internally; force bypasses all of them.
@@ -283,7 +287,8 @@ class TrailArr:
             # window expires automatically per cfg.source_block_minutes.
             source = _url_source(tmdb_trailer.url)
             if not force and self.db.is_source_blocked(source, self.cfg.source_block_minutes):
-                self.log.debug("Skipping %s — source %s currently blocked", tmdb_trailer.url, source)
+                self.log.info("Skipping %s — source %s currently blocked", tmdb_trailer.url, source)
+                skipped_blocked = True
                 continue
 
             existing = self.db.select_by_url(tmdb_trailer.url)
@@ -299,6 +304,7 @@ class TrailArr:
                     if dl is None:
                         # Source became blocked mid-flight. Leave the existing
                         # broken row alone; subsequent runs honor the block.
+                        skipped_blocked = True
                         continue
                     if dl.file.broken:
                         self.db.mark_broken(tmdb_trailer.tmdb_id, tmdb_trailer.url)
@@ -313,6 +319,7 @@ class TrailArr:
             if dl is None:
                 # Source became blocked on this URL — don't insert a row for
                 # an unattempted URL. Next eligible run will try fresh.
+                skipped_blocked = True
                 continue
             self.db.insert_download(dl)
             if not dl.file.broken:
@@ -320,7 +327,9 @@ class TrailArr:
 
         # Update query timestamp ONLY for providers that succeeded
         # This allows per-provider retry: if one provider had a 502, only it retries on next run
-        if providers_succeeded:
+        if skipped_blocked:
+            self.log.info("Not caching provider query for %s — trailers skipped due to a blocked source", movie)
+        elif providers_succeeded:
             self.db.update_provider_queries(movie.tmdb_id, providers_succeeded)
             self.log.debug("Updated query timestamps for tmdb_id=%d providers: %s",
                          movie.tmdb_id, ', '.join(sorted(providers_succeeded)))
